@@ -1,0 +1,11 @@
+# Ignorar todo el contenido de mibs/ (archivos MIB/CFG de referencia, ~44 MB)
+# pero conservar la carpeta en el repo.
+*
+!.gitignore
+
+# Excepcion: mibs/hpe-real/ es el subconjunto curado de MIB reales de HPE/Compaq
+# usado para simular los agentes SNMP de data/hpe-dl380-01 y data/hpe-dl360-01
+# (ver MAPEO-SERVIDOR.md). A diferencia del resto de esta carpeta (dump generico
+# de MIB de multiples fabricantes), este subconjunto si se versiona.
+!hpe-real/
+!hpe-real/**

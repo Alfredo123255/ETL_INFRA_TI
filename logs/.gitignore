@@ -1,0 +1,5 @@
+# Logs y caches de ejecucion de los agentes SNMP simulados (snmpsim-command-responder).
+# Se regeneran solos al levantar los agentes (ver data/*/README.md); no aportan nada
+# versionados.
+*
+!.gitignore
