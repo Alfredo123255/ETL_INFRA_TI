@@ -68,6 +68,7 @@ realidad con el agente arriba.
 | `capacidadDiscosGb` | Suma de `cpqDaLogDrvSize` (`1.3.6.1.4.1.232.3.2.3.1.1.9`, MB) por cada unidad lógica del `cpqDaLogDrvTable` | CPQIDA-MIB | Sumatoria de la ETL sobre todas las filas, no un escalar único |
 | `ip_sistema_operativo` | **No disponible en estos 7 módulos.** El único campo de IP en `CPQHOST-MIB` es `cpqHoClientIpAddress`, que es la IP de una *consola de gestión remota* registrada, no la IP propia del servidor. La IP real del host la expone el `IP-MIB`/`IF-MIB` estándar (fuera del alcance HPE de esta tarea). |
 | `version_so` | `1.3.6.1.4.1.232.11.2.2.2` (`cpqHoVersion`) | CPQHOST-MIB | DisplayString, "The version of the host OS." Complementario: `cpqHoName` (`...11.2.2.1`) da el nombre del SO y `cpqHosysDescr` (`...11.2.2.13`) da el equivalente a `sysDescr`. |
+| `version_firmware` | `1.3.6.1.4.1.232.1.2.6.1` (`cpqSeSysRomVer`) | CPQSTDEQ-MIB | DisplayString, "System ROM version information." Es la versión de ROM/BIOS del sistema en general (grupo `cpqSeRom`), no de un componente específico. Se revisaron los 7 módulos ya usados más `cpqsm2` y `cpqrecov` buscando un OID de firmware a nivel de servidor completo; el resto de campos de firmware encontrados son por componente (ej. `cpqHeFltTolPowerSupplyFirmwareRev`, `cpqDaCntlrOptionRomRev`), no equivalentes a este. La fecha de publicación del firmware viene incluida como texto dentro de este mismo valor (ej. `"U30 v2.78 (03/22/2023)"`) — no existe un OID de fecha aparte, así que no hace falta (ni es posible) separarlas; ver sección 5 para el detalle de por qué. |
 
 ## 4. Componentes
 
@@ -160,3 +161,24 @@ realidad con el agente arriba.
 - `tipo_corriente` de fuentes de poder (AC/DC no está expuesto)
 - `marca` de tarjetas de red (embebida en texto de `modelo`, sin campo aislado)
 - `cantidad_puertos` por tarjeta de red como conteo directo (la tabla es por puerto, no por tarjeta)
+- fecha de actualización/publicación de `version_firmware` como campo aislado. Se revisaron los
+  mismos 9 módulos (los 7 base + `cpqsm2` + `cpqrecov`) y ninguno expone una fecha de firmware
+  propia: `cpqSiQuickTestRomDate` (CPQSINFO-MIB) es la fecha de un ROM de autodiagnóstico rápido
+  distinto al BIOS/ROM principal; `cpqSiCurRevDate`/`cpqSiPrevRevDate` (CPQSINFO-MIB) son fechas
+  de configuración de la utilidad EISA (concepto legacy, sin relación con firmware); y
+  `cpqHoFwVerTable` (CPQHOST-MIB), aunque sí identifica la fila del ROM del sistema vía
+  `cpqHoFwVerDeviceType=systemRom(23)`, no tiene columna de fecha en su `SEQUENCE` (solo
+  `Version`, `Location`, `XmlString`, `KeyString`). La única fecha real disponible es la que
+  viene como texto libre dentro del propio valor de `version_firmware`
+  (`cpqSeSysRomVer`, ej. `"U30 v2.78 (03/22/2023)"`); si se necesita como campo aparte, habría
+  que parsearla de ese string, no leerla de un OID distinto.
+
+## 6. Campos generados por el ETL (ni SNMP ni manual)
+
+- `ultima_actualizacion`: no es un dato del servidor ni un valor que se lea de ningún OID ni que
+  se llene a mano. Es la fecha/hora en que el proceso de carga del ETL escribe (inserta o
+  actualiza) el registro en la base de datos. El futuro script de carga (todavía no existe en
+  este repositorio) debe asignarle la fecha/hora actual **en el momento de insertar o
+  actualizar el registro**, no leerla de ninguna fuente externa (ni del agente SNMP, ni de un
+  archivo, ni de un valor calculado a partir de otro campo). No corresponde agregar este campo
+  a ningún `public.snmprec`.
