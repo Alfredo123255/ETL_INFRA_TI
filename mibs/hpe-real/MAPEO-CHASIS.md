@@ -102,6 +102,44 @@ tarjetas de red de un servidor individual.
 | `cantidad_puertos` | **No disponible.** La tabla no tiene ningún campo de conteo de puertos por conector/módulo. |
 | `estado` | **No disponible.** A diferencia de las otras tres tablas de componentes de este mismo módulo (ventiladores, fuentes de poder, y del servidor: CPU/disco/RAM/NIC/RAID), `cpqRackNetConnectorTable` **no tiene ningún campo de condición/salud** en su `SEQUENCE` — solo `cpqRackNetConnectorPresent` (`other/absent/present`, presencia, no salud) y `cpqRackNetConnectorHasFuses` (remite a la tabla de fusibles, no es la condición del propio conector). No se fuerza `Present` como equivalente de `estado` porque presencia y condición de salud son conceptos distintos. |
 
+### 4.5 Puertos del módulo de interconexión (`IF-MIB` estándar + `HPVCMODULE-MIB`)
+
+`cpqRackNetConnectorTable` (sección 4.4) describe el **módulo** de interconexión completo, pero
+`CPQRACK-MIB` no tiene ninguna tabla de **puertos** de ese módulo — se confirmó revisando todo
+el `.mib`. Para modelar los puertos concretos del módulo de la bahía 1 (HPE Virtual Connect
+Flex-10/10D, ver `cpqRackNetConnectorModel.1.1.1` en la sección 4.4) se usan dos módulos que no
+son de la carpeta original de 7 módulos del servidor:
+
+- **`IF-MIB` estándar** (RFC 2863, `1.3.6.1.2.1.2` / `1.3.6.1.2.1.31`), igual que
+  `ip_sistema_operativo` en `MAPEO-SERVIDOR.md`. Se agregó `ifTable` **y** `ifXTable`
+  (no sólo `ifTable`) porque `ifXTable` es la que aporta `ifName` (nombre corto de puerto,
+  `X1`..`X8`/`d1`..`d4`) y los contadores de 64 bits (`ifHCInOctets`/`ifHCOutOctets`, ver nota
+  de tipos más abajo).
+- **`HPVCMODULE-MIB`** (`1.3.6.1.4.1.11.5.7.5.2.3`, propietario de HPE pero **sí** estaba ya en
+  `mibs/hpe-real/` como `HPVCMODULE-MIB.mib` desde la copia inicial — ver sección 0 de
+  `MAPEO-SERVIDOR.md`). Es el MIB que expone el módulo Virtual Connect en sí; su tabla
+  `vcModulePortTable` (`...2.3.1.1.6`, índice `vcModulePort`) es la que documentada como *"a
+  table that contains VC specific information about every port that is associated with this
+  bridge"* — es decir, cubre tanto los puertos externos como los internos.
+
+| Campo | OID | Módulo | Notas |
+|---|---|---|---|
+| Puerto (fila de interfaz) | `ifIndex` (`1.3.6.1.2.1.2.2.1.1`) | IF-MIB | Un `ifIndex` por puerto: `1`-`8` para `X1`-`X8` (externos, salida del módulo), `9`-`12` para `d1`-`d4` (internos, hacia los slots de blade) — la numeración X/d es una convención de nombres de este documento/simulación para demostrar el filtrado externo/interno, no algo que imponga el MIB. |
+| `ifDescr`/`ifName` | `1.3.6.1.2.1.2.2.1.2` / `1.3.6.1.2.1.31.1.1.1.1` | IF-MIB | `ifName` trae el nombre corto (`X1`..`X8`, `d1`..`d4`); `ifDescr` trae una descripción más larga. |
+| `ifType` | `1.3.6.1.2.1.2.2.1.3` | IF-MIB | `ethernetCsmacd(6)` para los 12 puertos (estándar `IANAifType-MIB`, no propietario). |
+| `ifOperStatus`/`ifAdminStatus` | `1.3.6.1.2.1.2.2.1.8` / `...1.7` | IF-MIB | Los 12 puertos simulados están arriba (`up`); el puerto caído a propósito de esta simulación está en el servidor `hpe-dl360-01` (`MAPEO-SERVIDOR.md`), no en el chasis. |
+| `ifSpeed`/`ifHighSpeed` | `1.3.6.1.2.1.2.2.1.5` / `1.3.6.1.2.1.31.1.1.1.15` | IF-MIB | 10 Gb por puerto (Flex-10/10D): `ifSpeed=4294967295` (tope de 32 bits, ya que 10 Gbps lo supera) y `ifHighSpeed=10000` (Mbps), mismo criterio que `cpqNicIfPhysAdapterSpeed`/`SpeedMbps` en el servidor. |
+| Relación puerto → interfaz | `1.3.6.1.4.1.11.5.7.5.2.3.1.1.6.1.2` (`vcModulePortIfIndex`) — tabla `vcModulePortTable`, índice `vcModulePort` (`...6.1.1`) | HPVCMODULE-MIB | *"The value of the instance of the ifIndex object, defined in IF-MIB, for the interface corresponding to this port."* Se usa `vcModulePort` = `1`..`12` (mismo orden que los `ifIndex` de arriba) y `vcModulePortIfIndex` apuntando 1 a 1 a esos `ifIndex`. |
+
+**Contadores de tráfico y errores que crecen:** `ifInOctets`/`ifOutOctets` (Counter32, tag `65`
+en `.snmprec`) y `ifHCInOctets`/`ifHCOutOctets` (Counter64, tag `70`) de `ifXTable`, más
+`ifInErrors`/`ifOutErrors` (Counter32, tag `65`), todos con variación `numeric` de snmpsim
+(`<OID>|<tag>:numeric|rate=<por segundo>,initial=<valor>`) y una tasa distinta por cada uno de
+los 12 puertos. A diferencia de `cpqnic.mib` en los servidores (que sólo tiene contadores de 32
+bits, ver `MAPEO-SERVIDOR.md` sección 4.6), `ifXTable` sí trae la variante de 64 bits — por eso
+la etiqueta `70` (Counter64) se ejercita acá, y la `65` (Counter32) tanto acá como en los
+servidores.
+
 ## 5. Resumen de campos NO disponibles vía este MIB (no se inventan valores)
 
 - `fabricante` (constante de aplicación, no OID — igual que el servidor)
@@ -111,9 +149,14 @@ tarjetas de red de un servidor individual.
 - `tipo_corriente` de fuentes de poder por unidad individual (existe un campo similar pero a
   nivel de todo el dominio de energía, no por PSU — ver sección 4.3)
 - `marca` de tarjetas de red/interconnects (embebida en texto de `modelo`, sin campo aislado)
-- `cantidad_puertos` de tarjetas de red/interconnects (ningún campo de conteo en la tabla)
-- `estado` de tarjetas de red/interconnects como campo de salud/condición (la tabla no tiene
-  ningún campo de condición; solo presencia, que es un concepto distinto)
+- `cantidad_puertos` de tarjetas de red/interconnects **como campo de `CPQRACK-MIB`**: sigue sin
+  existir ese conteo en `cpqRackNetConnectorTable`. Sí es contable indirectamente a nivel de
+  puerto individual vía `IF-MIB`/`HPVCMODULE-MIB` (sección 4.5) para el módulo de la bahía 1
+  simulado en este chasis, pero eso no es un campo de `CPQRACK-MIB`.
+- `estado` de tarjetas de red/interconnects como campo de salud/condición **de `CPQRACK-MIB`**:
+  sigue sin existir en esa tabla (sólo presencia). `IF-MIB` (sección 4.5) sí aporta
+  `ifOperStatus`/`ifAdminStatus` por puerto, que es un campo de estado distinto (de la interfaz,
+  no de la condición de salud del módulo completo que pedía el mapeo original).
 
 ## 6. Campos generados por el ETL (ni SNMP ni manual)
 

@@ -89,10 +89,19 @@ reiniciarlo (o pasar `--force-index-rebuild`) para que tome los cambios.
 ## Especificaciones simuladas (resumen)
 
 - Hostname: `hpe-dl360-01` · Serie: `CZ36010XYZ` · Modelo: ProLiant DL360 Gen10
-- 1x Intel Xeon Silver 4210R (10 núcleos / 20 hilos, 2.4 GHz) · 64 GB RAM (4x16GB)
-- RAID1 sobre 2 discos SSD 480GB (controladora Smart Array E208i-a)
+- 1x Intel Xeon Silver 4210R (10 núcleos / 20 hilos, 2.4 GHz) · 64 GB RAM (4x16GB), con número de
+  serie por módulo (`cpqSiMemModuleSerialNo`)
+- RAID1 sobre 2 discos SSD 480GB (controladora Smart Array E208i-a, con
+  `cpqDaCntlrSerialNumber`); `cpqDaLogDrvSize` = 457.862 MB, la capacidad útil real de RAID1
+  sobre 2x457.862 MB (no la suma de ambos discos)
 - 2 fuentes de poder (ambas sanas) · 2 ventiladores · 2 sensores de temperatura
-- 2 NIC (una marcada `degraded` a propósito, para probar el estado Degradado)
+- 2 puertos de red (`cpqNicIfPhysAdapterTable`), ambos del mismo adaptador 331i embebido (slot
+  0, puertos 1 y 2): NIC1 arriba (1 Gb) y **NIC2 caída a propósito**
+  (`cpqNicIfPhysAdapterStatus` = `linkFailure`, `cpqNicIfPhysAdapterCondition` = `failed`), para
+  probar el estado Apagado a nivel de puerto. Cada puerto con MAC propia, velocidad y
+  contadores de tráfico/errores; en NIC1 los contadores crecen en vivo (variación `numeric` de
+  snmpsim), en NIC2 quedan estáticos (el enlace está caído, no hay tráfico nuevo)
+- IP-MIB: `10.10.12.12/24`
 - Sistema operativo simulado: Red Hat Enterprise Linux Server 8.6
 
 Ver [`MAPEO-SERVIDOR.md`](../../mibs/hpe-real/MAPEO-SERVIDOR.md) para qué campos no tienen OID

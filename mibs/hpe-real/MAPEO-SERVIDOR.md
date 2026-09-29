@@ -30,6 +30,11 @@ resueltos por el espejo `https://mibs.pysnmp.com/asn1/@mib@`). Las siete carpeta
 compiladas con `pysmi` sin errores; los OID de este documento se resolvieron con `pysnmp`
 (`MibBuilder.importSymbols` → `.getName()`), no derivados a mano de los comentarios del `.mib`.
 
+Además de los 7 módulos propietarios, `ip_sistema_operativo` (sección 3) usa el módulo **estándar**
+`IP-MIB` (RFC 4293/RFC 1213, no HPE-específico, no vive en `mibs/hpe-real/` porque no es propietario
+de Compaq/HPE), resuelto igual que las dependencias RFC de arriba: vía el mismo espejo
+`https://mibs.pysnmp.com/asn1/@mib@` con `pysnmp`, no derivado a mano.
+
 ## 2. Convención `EstadoEnum` usada en este mapeo
 
 Casi todos los campos de condición HPE usan el patrón `other(1) / ok(2) / degraded(3) / failed(4)`
@@ -66,7 +71,7 @@ realidad con el agente arriba.
 | `ramTotalGb` | `1.3.6.1.4.1.232.11.2.13.1` (`cpqHoPhysicalMemorySize`, MB) | CPQHOST-MIB | INTEGER en MB → convertir a GB |
 | `ramUsoGb` | Derivado: `cpqHoPhysicalMemorySize` − `cpqHoPhysicalMemoryFree` (`1.3.6.1.4.1.232.11.2.13.2`, MB) | CPQHOST-MIB | Resta de dos OID, en MB → convertir a GB |
 | `capacidadDiscosGb` | Suma de `cpqDaLogDrvSize` (`1.3.6.1.4.1.232.3.2.3.1.1.9`, MB) por cada unidad lógica del `cpqDaLogDrvTable` | CPQIDA-MIB | Sumatoria de la ETL sobre todas las filas, no un escalar único |
-| `ip_sistema_operativo` | **No disponible en estos 7 módulos.** El único campo de IP en `CPQHOST-MIB` es `cpqHoClientIpAddress`, que es la IP de una *consola de gestión remota* registrada, no la IP propia del servidor. La IP real del host la expone el `IP-MIB`/`IF-MIB` estándar (fuera del alcance HPE de esta tarea). |
+| `ip_sistema_operativo` | `1.3.6.1.2.1.4.20.1.1` (`ipAdEntAddr`), tabla `ipAddrTable` | **IP-MIB (estándar, RFC 1213/4293)**. El único campo de IP en `CPQHOST-MIB` es `cpqHoClientIpAddress`, que es la IP de una *consola de gestión remota* registrada, no la IP propia del servidor — por eso se usa el `IP-MIB` estándar en su lugar. `ipAdEntIfIndex` (`...4.20.1.2`) referencia el índice de interfaz que porta esa IP; en los servidores rack (`hpe-dl380-01`/`hpe-dl360-01`) se usa el índice de `cpqNicIfPhysAdapterTable` (sección 4.6) ya que este agente no expone `IF-MIB` propio, y en los blades (`hpe-bl460c-01`/`hpe-bl460c-02`, sin tabla de NIC propia — ver sección "Servidores tipo BLADE") se deja `1` como referencia genérica. |
 | `version_so` | `1.3.6.1.4.1.232.11.2.2.2` (`cpqHoVersion`) | CPQHOST-MIB | DisplayString, "The version of the host OS." Complementario: `cpqHoName` (`...11.2.2.1`) da el nombre del SO y `cpqHosysDescr` (`...11.2.2.13`) da el equivalente a `sysDescr`. |
 | `version_firmware` | `1.3.6.1.4.1.232.1.2.6.1` (`cpqSeSysRomVer`) | CPQSTDEQ-MIB | DisplayString, "System ROM version information." Es la versión de ROM/BIOS del sistema en general (grupo `cpqSeRom`), no de un componente específico. Se revisaron los 7 módulos ya usados más `cpqsm2` y `cpqrecov` buscando un OID de firmware a nivel de servidor completo; el resto de campos de firmware encontrados son por componente (ej. `cpqHeFltTolPowerSupplyFirmwareRev`, `cpqDaCntlrOptionRomRev`), no equivalentes a este. La fecha de publicación del firmware viene incluida como texto dentro de este mismo valor (ej. `"U30 v2.78 (03/22/2023)"`) — no existe un OID de fecha aparte, así que no hace falta (ni es posible) separarlas; ver sección 5 para el detalle de por qué. |
 
@@ -107,6 +112,7 @@ realidad con el agente arriba.
 |---|---|---|
 | `marca` | `1.3.6.1.4.1.232.2.2.4.5.1.7` (`cpqSiMemModuleManufacturer`) | DisplayString |
 | `modelo` | `1.3.6.1.4.1.232.2.2.4.5.1.8` (`cpqSiMemModulePartNo`) | DisplayString (part number del fabricante, se usa como "modelo") |
+| `serie` | `1.3.6.1.4.1.232.2.2.4.5.1.10` (`cpqSiMemModuleSerialNo`) | DisplayString. Columna de la misma tabla `cpqSiMemModuleTable`, no se había poblado en la primera pasada de este mapeo — ya estaba identificada como real, sólo faltaba la fila de datos. |
 | `generacion` | **No disponible.** `cpqSiMemModuleTechnology` (enum `fastPageMode/edoPageMode/synchronous/rdram/...`) es tecnología de memoria de los 90, no generación DDR3/DDR4/DDR5. No hay campo DDR-generación en este MIB legacy. |
 | `valocidad_mhz` | `1.3.6.1.4.1.232.2.2.4.5.1.13` (`cpqSiMemModuleFrequency`) | INTEGER en MHz directo |
 | `capacidad_gb` | `1.3.6.1.4.1.232.2.2.4.5.1.3` (`cpqSiMemModuleSize`) | INTEGER en **KB** → convertir a GB |
@@ -129,29 +135,85 @@ realidad con el agente arriba.
 | `tipo_corriente` | **No disponible.** No existe un campo AC/DC explícito en la tabla; sólo `cpqHeFltTolPowerSupplyMainVoltage` (voltaje de entrada en volts), del cual no se puede inferir con certeza AC vs DC sin asumir umbrales arbitrarios. |
 | `estado` | `1.3.6.1.4.1.232.6.2.9.3.1.4` (`cpqHeFltTolPowerSupplyCondition`) | Enum `other/ok/degraded/failed` → EstadoEnum |
 
-### 4.6 Tarjetas de red (`CPQNIC-MIB`, tabla `cpqNicIfPhysAdapterTable`, índice `cpqNicIfPhysAdapterIndex`)
+### 4.6 Tarjetas de red y sus puertos (`CPQNIC-MIB`, tabla `cpqNicIfPhysAdapterTable`, índice `cpqNicIfPhysAdapterIndex`)
+
+Esta tabla modela **un puerto físico por fila** (no una tarjeta con N puertos), confirmado
+leyendo directamente `cpqnic.mib`: no existe ninguna tabla separada de "tarjetas" en este
+módulo. Para llenar dos conceptos distintos en el sistema de monitoreo — **tarjeta de red**
+(modelo, cantidad de puertos, estado agregado) y **puerto de red** (número de puerto, MAC,
+velocidad, estado) — el ETL debe:
+
+1. **Agrupar filas por tarjeta usando `cpqNicIfPhysAdapterSlot`** (columna `...1.1.5`, ver abajo):
+   todas las filas con el mismo valor de `Slot` pertenecen a la misma tarjeta física. Esta es la
+   única columna de la tabla pensada explícitamente para identificar el hardware físico que
+   implementa cada interfaz (su descripción real: *"The number of the slot containing the
+   physical hardware that implements this interface. The number zero (0) indicates an embedded
+   interface"*). `cpqNicIfPhysAdapterPciLocation` (`...1.1.43`, texto libre de ubicación PCI)
+   podría servir como agrupador alternativo más granular, pero `Slot` es el campo numérico
+   normalizado que ya usa este MIB para ese propósito.
+2. Dentro de cada grupo (`tarjeta`), cada fila es un `puerto`, distinguido por
+   `cpqNicIfPhysAdapterPort` (columna `...1.1.10`, número de puerto dentro de la tarjeta
+   multi-puerto).
+
+En los agentes simulados: `hpe-dl380-01` tiene dos tarjetas distintas (`Slot=0` para el LOM
+331i embebido, `Slot=1` para el 562FLR-SFP+ add-in), una fila = un puerto cada una;
+`hpe-dl360-01` tiene una sola tarjeta (`Slot=0`, el 331i embebido de 4 puertos), con dos filas
+(`Port=1` y `Port=2`) representando dos de sus puertos.
 
 | Campo | OID (columna) | Notas |
 |---|---|---|
-| `marca` | **No disponible como campo separado.** `cpqNicIfPhysAdapterName` (DisplayString libre, `1.3.6.1.4.1.232.18.2.3.1.1.39`) suele incluir el fabricante en el texto (ej. "HPE Ethernet 1Gb 4-port 331i"), pero no hay un campo de marca aislado. |
-| `modelo` | `1.3.6.1.4.1.232.18.2.3.1.1.39` (`cpqNicIfPhysAdapterName`) — alternativa: `cpqNicIfPhysAdapterPartNumber` (`...1.1.32`) | Se usa `Name` como texto de modelo comercial; `PartNumber` es el part number HPE |
-| `cantidad_puertos` | **No disponible como conteo directo por tarjeta física.** Esta tabla modela **un puerto por fila** (indexada por `cpqNicIfPhysAdapterIndex`), no una tarjeta con N puertos. `cpqNicIfLogMapAdapterCount` (`1.3.6.1.4.1.232.18.2.2.1.1.5`) cuenta adaptadores agrupados en un *team* lógico (bonding/teaming), que es un concepto distinto. Contar puertos por tarjeta física requeriría agrupar filas por `cpqNicIfPhysAdapterSlot`/`cpqNicIfPhysAdapterPciLocation`, un cálculo de la ETL, no un OID. |
-| `estado` | `1.3.6.1.4.1.232.18.2.3.1.1.12` (`cpqNicIfPhysAdapterCondition`) | Enum `other/ok/degraded/failed` → EstadoEnum |
+| `marca` (tarjeta) | **No disponible como campo separado.** `cpqNicIfPhysAdapterName` (DisplayString libre, `1.3.6.1.4.1.232.18.2.3.1.1.39`) suele incluir el fabricante en el texto (ej. "HPE Ethernet 1Gb 4-port 331i"), pero no hay un campo de marca aislado. |
+| `modelo` (tarjeta) | `1.3.6.1.4.1.232.18.2.3.1.1.39` (`cpqNicIfPhysAdapterName`) — alternativa: `cpqNicIfPhysAdapterPartNumber` (`...1.1.32`) | Se usa `Name` como texto de modelo comercial; `PartNumber` es el part number HPE. Si la tarjeta tiene más de un puerto simulado, todas sus filas comparten el mismo `Name`/`PartNumber` (es el mismo hardware). |
+| `cantidad_puertos` (tarjeta) | **Derivado, no es un único OID.** Se cuenta la cantidad de filas de `cpqNicIfPhysAdapterTable` que comparten el mismo `cpqNicIfPhysAdapterSlot` (ver agrupación arriba). `cpqNicIfLogMapAdapterCount` (`1.3.6.1.4.1.232.18.2.2.1.1.5`) NO sirve para esto: cuenta adaptadores agrupados en un *team* lógico (bonding/teaming), un concepto distinto al de puertos físicos de una misma tarjeta. |
+| `numero_puerto` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.10` (`cpqNicIfPhysAdapterPort`) | INTEGER, "The port number of the interface for multi-port NICs." `-1` si no se pudo determinar. |
+| `mac_address` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.4` (`cpqNicIfPhysAdapterMACAddress`) | OCTET STRING de 6 bytes (tipo `4x` en `.snmprec`, valor hex). Puede venir vacío en algunas configuraciones según el propio MIB. |
+| `velocidad` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.36` (`cpqNicIfPhysAdapterSpeedMbps`) — alternativa/complemento: `cpqNicIfPhysAdapterSpeed` (`...1.1.33`, bits/seg) | Ambas `Gauge32`. El propio MIB indica que `Speed` (bps) se pone en `0` si la velocidad supera 4.294.967.296 bps (4 Gbps) y que en ese caso hay que usar `SpeedMbps` en su lugar — así se hizo para el puerto 562FLR de 10 Gb del DL380 (`Speed=0`, `SpeedMbps=10000`). |
+| `estado` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.14` (`cpqNicIfPhysAdapterStatus`) | Enum propio `unknown(1)/ok(2)/generalFailure(3)/linkFailure(4)` → EstadoEnum. El MIB documenta que `cpqNicIfPhysAdapterCondition` (columna `...1.1.12`, ya usada en el mapeo original) **se deriva** de este campo (`ok`→`ok`, `linkFailure`→`failed`); se mantienen ambas columnas por compatibilidad con el mapeo previo, pero `Status` es la fuente más granular. |
+| `estado` (tarjeta, agregado) | Derivado del peor `estado` entre los puertos del mismo `Slot` (ver `EstadoEnum`) | No hay un campo de condición a nivel de tarjeta completa en este MIB, sólo por puerto/fila; el estado de la tarjeta es un agregado de la ETL sobre sus puertos. |
+| `trafico_entrada_bytes` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.37` (`cpqNicIfPhysAdapterInOctets`) | `Counter` (Counter32, `.snmprec` tag `65`). *"A count of Octets Received on the physical adapter."* `STATUS optional` en el MIB (no todos los adaptadores lo implementan), pero es un objeto real. |
+| `trafico_salida_bytes` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.38` (`cpqNicIfPhysAdapterOutOctets`) | `Counter` (Counter32, tag `65`). Igual que `InOctets` pero de salida. |
+| `errores_alineamiento` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.20` (`cpqNicIfPhysAdapterAlignmentErrors`) | `Counter` (Counter32, tag `65`). Tramas recibidas que no calzan en un número entero de octetos. |
+| `errores_fcs` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.21` (`cpqNicIfPhysAdapterFCSErrors`) | `Counter` (Counter32, tag `65`). Tramas que fallan el chequeo de checksum (Frame Check Sequence). |
+| `errores_recepcion` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.19` (`cpqNicIfPhysAdapterBadReceives`) | `Counter` (Counter32, tag `65`). Según la descripción del propio MIB es la **suma** de `AlignmentErrors` + `FCSErrors` + `FrameTooLongs` + `InternalMacReceiveErrors`; se usa como contador agregado de errores de entrada. |
+| `errores_transmision` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.18` (`cpqNicIfPhysAdapterBadTransmits`) | `Counter` (Counter32, tag `65`). Suma documentada de `DeferredTransmissions` + `LateCollisions` + `ExcessiveCollisions` + `CarrierSenseErrors` + `InternalMacTransmitErrors`; agregado de errores de salida. |
+
+**Nota sobre tipos de contador (Counter32 vs Counter64):** `cpqnic.mib` sólo define estos
+contadores como `Counter` (`SYNTAX Counter`), que en SMIv1 sólo existe en 32 bits — no hay
+ningún contador de 64 bits (`Counter64`) en este módulo, a diferencia de `IF-MIB`/`ifXTable`
+(que sí lo tiene, ver `MAPEO-CHASIS.md`). Por eso en `.snmprec` estos ocho contadores usan
+siempre la etiqueta `65` (Counter32) — nunca `70` (Counter64) — con la forma de variación
+`numeric` de snmpsim: `<OID>|65:numeric|rate=<por segundo>,initial=<valor>`.
+
+**Contadores más finos disponibles en `cpqnic.mib` pero no poblados en esta simulación** (tienen
+OID real, simplemente no se cargó una fila de datos para ellos, por alcance): `GoodReceives`
+(`...1.1.17`), `GoodTransmits` (`...1.1.16`), `DeferredTransmissions` (`...1.1.24`),
+`LateCollisions` (`...1.1.25`), `ExcessiveCollisions` (`...1.1.26`), `CarrierSenseErrors`
+(`...1.1.28`), `FrameTooLongs` (`...1.1.29`), `InternalMacReceiveErrors` (`...1.1.30`),
+`InternalMacTransmitErrors` (`...1.1.27`), `SingleCollisionFrames` (`...1.1.22`),
+`MultipleCollisionFrames` (`...1.1.23`).
 
 ### 4.7 Controladoras RAID (`CPQIDA-MIB`, tabla `cpqDaCntlrTable`, índice `cpqDaCntlrIndex`; RAID level tomado de `cpqDaLogDrvTable`)
 
 | Campo | OID (columna) | Notas |
 |---|---|---|
 | `modelo` | `1.3.6.1.4.1.232.3.2.2.1.1.2` (`cpqDaCntlrModel`) | Enum de modelos Smart Array (`smart-p420`, `sa-p600`, etc. — lista extensa de valores nombrados, no texto libre) |
-| `raid` | `1.3.6.1.4.1.232.3.2.3.1.1.3` (`cpqDaLogDrvFaultTol`) — tabla `cpqDaLogDrvTable`, relacionada a la controladora vía `cpqDaLogDrvCntlrIndex` | El nivel de RAID es una propiedad de la **unidad lógica**, no de la controladora en sí (una controladora puede tener varias unidades lógicas con RAID distinto); se toma la primera unidad lógica de cada controladora como representativa. Enum: `none/mirroring/dataGuard/raid50/raid60/raid10/...` |
+| `serie` | `1.3.6.1.4.1.232.3.2.2.1.1.15` (`cpqDaCntlrSerialNumber`) | DisplayString. Columna de la misma tabla `cpqDaCntlrTable`, no se había poblado en la primera pasada de este mapeo — ya estaba identificada como real, sólo faltaba la fila de datos. |
+| `raid` | `1.3.6.1.4.1.232.3.2.3.1.1.3` (`cpqDaLogDrvFaultTol`) — tabla `cpqDaLogDrvTable`, relacionada a la controladora vía `cpqDaLogDrvCntlrIndex` | El nivel de RAID es una propiedad de la **unidad lógica**, no de la controladora en sí (una controladora puede tener varias unidades lógicas con RAID distinto); se toma la primera unidad lógica de cada controladora como representativa. Enum: `none/mirroring/dataGuard/raid50/raid60/raid10/...` (`mirroring(3)` = RAID1, `raid10(12)` = RAID10) |
 | `estado` | `1.3.6.1.4.1.232.3.2.2.1.1.6` (`cpqDaCntlrCondition`) | Enum `other/ok/degraded/failed` → EstadoEnum |
 
 ## 5. Resumen de campos NO disponibles vía estos MIB (no se inventan valores)
 
+> **Corrección:** en una versión anterior de este documento, `cantidad_hilos` de CPU y
+> `cantidad_puertos` de tarjeta de red aparecían en esta lista de "no disponibles". Es incorrecto:
+> ambos **sí tienen origen real**, sólo que calculado a partir de más de un OID, no leído de un
+> único OID — no es lo mismo que "sin fuente". `cantidad_hilos` = `cantidad_nucleos`
+> (`cpqSeCpuCore`) × `cpqSeCPUCoreMaxThreads` (ver sección 4.1); `cantidad_puertos` = conteo de
+> filas de `cpqNicIfPhysAdapterTable` que comparten el mismo `cpqNicIfPhysAdapterSlot` (ver
+> sección 4.6). Los campos que sí quedan en esta lista son los que ningún OID real, ni solo ni
+> combinado con otros, puede producir.
+
 - `fabricante` (constante de aplicación, no OID)
 - `generacion` de servidor (implícita en texto de `modelo`, sin campo propio)
-- `ip_sistema_operativo` (requeriría IP-MIB/IF-MIB estándar, fuera de los módulos HPE pedidos)
-- `cantidad_hilos` de CPU como valor directo (se deriva; no hay OID de hilos totales por paquete)
 - `cacheL1/L2/L3` no son "no disponibles" pero sí requieren tres lecturas indexadas de la misma
   columna (`cpqSeCpuCacheSize` filtrado por nivel), no tres OID distintos
 - `marca` de discos (sólo texto de modelo, sin campo de fabricante aislado)
@@ -160,7 +222,6 @@ realidad con el agente arriba.
 - `modelo` de ventiladores (sin campo de modelo comercial en el MIB)
 - `tipo_corriente` de fuentes de poder (AC/DC no está expuesto)
 - `marca` de tarjetas de red (embebida en texto de `modelo`, sin campo aislado)
-- `cantidad_puertos` por tarjeta de red como conteo directo (la tabla es por puerto, no por tarjeta)
 - fecha de actualización/publicación de `version_firmware` como campo aislado. Se revisaron los
   mismos 9 módulos (los 7 base + `cpqsm2` + `cpqrecov`) y ninguno expone una fecha de firmware
   propia: `cpqSiQuickTestRomDate` (CPQSINFO-MIB) es la fecha de un ROM de autodiagnóstico rápido
@@ -172,6 +233,31 @@ realidad con el agente arriba.
   viene como texto libre dentro del propio valor de `version_firmware`
   (`cpqSeSysRomVer`, ej. `"U30 v2.78 (03/22/2023)"`); si se necesita como campo aparte, habría
   que parsearla de ese string, no leerla de un OID distinto.
+
+## 5.1 Servidores tipo BLADE: alcance distinto al de un servidor rack
+
+Los agentes simulados `hpe-bl460c-01`/`hpe-bl460c-02` (ProLiant BL460c Gen10) son servidores de
+tipo **BLADE**, montados en el chasis `hpe-c7000-01`. A diferencia de un servidor rack
+(DL380/DL360), un blade **no tiene tarjetas de red, ventiladores ni fuentes de poder propias**:
+comparte ese hardware con el resto del chasis. Por eso estos campos, aunque siguen existiendo
+como conceptos en la ficha del servidor, **no se leen del agente del blade** sino del agente del
+chasis (ver `MAPEO-CHASIS.md`):
+
+| Campo (ficha de servidor) | De dónde sale para un BLADE |
+|---|---|
+| Tarjetas de red / puertos (sección 4.6 de este documento) | No aplica al agente del blade. El chasis expone `cpqRackNetConnectorTable` (módulos de interconexión) y, para los puertos concretos, el `IF-MIB` del chasis (`MAPEO-CHASIS.md`, puertos `X1`..`X8`/`d1`..`d4`). |
+| Ventiladores | `cpqHeFltTolFanTable` no se puebla en el agente del blade; los ventiladores son del chasis (`cpqRackCommonEnclosureFanTable`, `MAPEO-CHASIS.md`). |
+| Fuentes de poder | `cpqHeFltTolPowerSupplyTable` no se puebla en el agente del blade; las fuentes son del chasis (`cpqRackPowerSupplyTable`, `MAPEO-CHASIS.md`). |
+
+Lo que **sí** reporta el propio agente del blade (mismos módulos y OID que un servidor rack,
+sin diferencias de mapeo): datos generales (hostname, número de serie, modelo, estado
+operativo), CPU (sección 4.1), RAM incluyendo `cpqSiMemModuleSerialNo` (sección 4.3), discos y
+controladora RAID incluyendo `cpqDaCntlrSerialNumber` (secciones 4.2 y 4.7), temperatura
+(sección 4.4 — sólo la tabla de sensores; nótese que `CPQHLTH-MIB` sí expone
+`cpqHeTemperatureTable` a nivel de host individual también en un blade), consumo eléctrico
+(`cpqHePowerMeterCurrReading`, sección 3) e IP del sistema operativo (`ip_sistema_operativo`,
+IP-MIB, sección 3) — con la salvedad de que, al no exponer este agente su propio `IF-MIB`,
+`ipAdEntIfIndex` no referencia ninguna fila local y se deja en `1` como valor nominal.
 
 ## 6. Campos generados por el ETL (ni SNMP ni manual)
 

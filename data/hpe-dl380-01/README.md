@@ -88,10 +88,20 @@ reiniciarlo (o pasar `--force-index-rebuild`) para que tome los cambios.
 ## Especificaciones simuladas (resumen)
 
 - Hostname: `hpe-dl380-01` · Serie: `CZ38010ABC` · Modelo: ProLiant DL380 Gen10
-- 2x Intel Xeon Gold 6230 (20 núcleos / 40 hilos, 2.1 GHz) · 128 GB RAM (4x32GB)
-- RAID10 sobre 4 discos SAS 600GB 15K (controladora Smart Array P408i-a)
+- 2x Intel Xeon Gold 6230 (20 núcleos / 40 hilos, 2.1 GHz) · 128 GB RAM (4x32GB), con número de
+  serie por módulo (`cpqSiMemModuleSerialNo`)
+- RAID10 sobre 4 discos SAS 600GB 15K (controladora Smart Array P408i-a, con
+  `cpqDaCntlrSerialNumber`); `cpqDaLogDrvSize` = 1.143.552 MB, la capacidad útil real de RAID10
+  sobre 4x571.776 MB (no la suma bruta)
 - 2 fuentes de poder (una marcada `failed` a propósito, para probar el estado Apagado)
-- 2 ventiladores, 2 sensores de temperatura, 2 NIC
+- 2 ventiladores, 2 sensores de temperatura
+- 2 puertos de red (`cpqNicIfPhysAdapterTable`): NIC1 (331i embebida, slot 0) 1 Gb y NIC2
+  (562FLR-SFP+ add-in, slot 1) 10 Gb, cada una con MAC propia, velocidad
+  (`cpqNicIfPhysAdapterSpeed`/`SpeedMbps`), estado (`cpqNicIfPhysAdapterStatus`) y contadores de
+  tráfico/errores (`InOctets`/`OutOctets`/`FCSErrors`/`AlignmentErrors`/`BadReceives`/
+  `BadTransmits`) que crecen en vivo (variación `numeric` de snmpsim, una tasa distinta por
+  puerto)
+- IP-MIB: `10.10.12.11/24`
 - Sistema operativo simulado: Microsoft Windows Server 2019 Standard
 
 Ver [`MAPEO-SERVIDOR.md`](../../mibs/hpe-real/MAPEO-SERVIDOR.md) para qué campos no tienen OID

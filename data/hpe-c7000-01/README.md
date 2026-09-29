@@ -81,12 +81,19 @@ reiniciarlo (o pasar `--force-index-rebuild`) para que tome los cambios.
 ## Especificaciones simuladas (resumen)
 
 - Hostname: `hpe-c7000-01` · Serie: `CZ7000ABCD` · Modelo: BladeSystem c7000 Enclosure G2
-- 8 slots (`cantidad_slots`): slot 1 = `hpe-dl380-01` (Ocupado), slot 2 = `hpe-dl360-01`
-  (Ocupado), slot 3 = `hpe-bl460c-03` (Degradado — presente pero con falla, para probar ese
-  estado), slots 4-8 = Libres
+- 8 slots (`cantidad_slots`): slot 1 = `hpe-bl460c-01` (Ocupado, agente propio en
+  [`data/hpe-bl460c-01`](../hpe-bl460c-01/)), slot 2 = `hpe-bl460c-02` (Ocupado, agente propio en
+  [`data/hpe-bl460c-02`](../hpe-bl460c-02/)), slot 3 = `hpe-bl460c-03` (Degradado — presente pero
+  con falla, para probar ese estado; sin agente propio), slots 4-8 = Libres
 - 4 fuentes de poder (una marcada `failed`/Apagado, a propósito) · 4 ventiladores (uno marcado
   Degradado) · 4 módulos de interconexión de red (Virtual Connect / switches Ethernet de blade)
 - Medidor de potencia total del chasis (`cpqRackPowerMeterWattage`): 3200 W
+- IF-MIB (+ ifXTable) del módulo de interconexión de la bahía 1 (Virtual Connect Flex-10/10D):
+  8 puertos externos `X1`..`X8` (10 Gb) y 4 internos `d1`..`d4` (10 Gb), todos arriba, con
+  contadores de tráfico y errores creciendo (variación `numeric` de snmpsim, tasa distinta por
+  puerto) — demuestra el filtrado externo/interno, ya que `CPQRACK-MIB` no expone puertos
+- HPVCMODULE-MIB: `vcModulePortTable` relaciona cada uno de esos 12 puertos
+  (`vcModulePort` 1-12) con su fila de IF-MIB vía `vcModulePortIfIndex`
 
 Ver [`MAPEO-CHASIS.md`](../../mibs/hpe-real/MAPEO-CHASIS.md) para qué campos no tienen OID real
 disponible en `CPQRACK-MIB` (no se inventaron valores para esos) — en particular, las tarjetas de
