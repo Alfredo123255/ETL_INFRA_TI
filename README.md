@@ -296,3 +296,95 @@ Resultado de la ejecución completa:
 Sin pruebas omitidas. Los avisos corresponden a deprecaciones de dependencias
 (pysmi, cryptography y TestClient/httpx) y un aviso de caché de pytest del entorno de ejecución;
 no fueron fallos de conexión ni de las aserciones.
+
+## Extracción y preparación del registro inicial de servidores HPE
+
+Esta sección actualiza el estado de los módulos de servidor y reemplaza las
+descripciones anteriores de módulos pendientes: ya están implementados la
+extracción, normalización y registro inicial en PostgreSQL mediante
+`POST /api/etl/crear-activo`. La ruta de prueba de conexión conserva su contrato.
+
+- `etl/oids/servidor.py`: perfil HPE con escalares, columnas y enumeración de
+  modelos de controladora transcrita de CPQIDA-MIB.
+- `etl/snmp_cliente.py`: `ConexionSNMP` y `SesionSNMP`, con GET y recorridos
+  GETBULK delimitados al subárbol; cierre del motor incluso al cancelar.
+- `etl/extraccion/servidor.py`: `extraer_servidor_hpe(conexion)` devuelve valores
+  ASN.1 por OID completo. La selección por fabricante no admite aún Huawei.
+- `etl/normalizacion/servidor.py`: produce `activo`, `servidor`, `componentes`,
+  `mediciones` y el texto original de `ubicacion_snmp`, con nombres del esquema.
+- `etl/ciclo.py`: `preparar_registro_servidor` reutiliza la prueba de conexión,
+  detección, extracción y normalización, sin guardar datos ni credenciales.
+- `etl/db.py`, `etl/repositorio.py` y `etl/carga.py`: conexión, SQL parametrizado y
+  transacción única para registrar activo, servidor, componentes, puertos y métricas.
+- `etl/metricas.py`: prepara las mediciones para `metrica_historica`.
+
+`cpuTotalGhz` queda a cargo del backend. `cpuUsoGhz` y `ramUsoGb` se devuelven
+como mediciones. `serie` de componentes se normaliza a `numero_serial`; la serie
+del activo es `numero_serie`. La fecha `ultima_actualizacion` se asigna antes de
+la futura carga, con fecha de Lima y tipo DATE. Los campos sin fuente quedan
+vacíos; la revisión de arquitectura de CPU no se interpreta como familia.
+
+La ubicación SNMP disponible usa textos como `DataCenter-1 / Rack A12 / U18-19`.
+Se toma el texto antes del primer `/` como nombre del datacenter; debe existir en
+`datacenters`. La solicitud puede enviar `ubicacion` para indicar explícitamente
+un datacenter existente. Los servidores BLADE deben indicarse como tales; sus
+componentes compartidos del chasis no se duplican ni se enlaza aún su slot.
+
+### Registro inicial por API
+
+Configurar `DATABASE_URL` y, opcionalmente, `DB_TIMEOUT` en `.env`. La prueba de
+conexión no requiere estas variables. Instalar las dependencias actualizadas de
+`requirements.txt`, incluido el controlador `psycopg2-binary`.
+
+La base debe tener aplicado el esquema R6 por el módulo propietario del esquema
+y estar poblado el catálogo de datacenters. El ETL no crea ni modifica tablas.
+
+Enviar `X-API-Key` y este cuerpo a `POST /api/etl/crear-activo` (reemplazar los
+marcadores de claves por los valores del agente, sin versionarlos):
+
+```json
+{
+  "ip_gestion": "127.0.0.11:16100",
+  "usuario": "monitor_dl380",
+  "clave": "<clave de autenticación>",
+  "clave_privacidad": "<clave de privacidad>",
+  "tipo_servidor": "RACKEABLE"
+}
+```
+
+`tipo_servidor` admite RACKEABLE (predeterminado) o BLADE. `ubicacion` es opcional.
+El perfil implementado es HPE ProLiant; otros fabricantes o tipos se rechazan.
+
+El proceso crea el modelo en `modelos` si no existe, inserta `activo` y `servidor`,
+sus CPU, RAM, discos, controladoras RAID, tarjetas, puertos, ventiladores y fuentes
+disponibles, y las métricas iniciales de uso de CPU/RAM, temperatura y consumo.
+Si falla cualquier escritura, se deshace toda la transacción, incluido un modelo
+nuevo. El registro inicial no actualiza activos existentes ni genera duplicados.
+
+No se registra aún una fila en `monitoreo_snmp`, no se almacenan las credenciales
+de la solicitud y no se configura frecuencia. Tampoco se genera un evento de
+cambio en `historico_estado` por esta primera inserción.
+
+Respuestas:
+
+- 201: activo creado; devuelve `activo_id`, identidad, ubicación y cantidades guardadas.
+- 401: clave de API ausente o incorrecta.
+- 409: serie o hostname ya registrado.
+- 422: solicitud, ficha o datacenter inválidos, o perfil no implementado.
+- 502/504: fallo de comunicación SNMP o tiempo de espera agotado.
+- 503: PostgreSQL no configurado, no disponible o fallo de persistencia.
+
+Las mediciones se almacenan en UTC en el TIMESTAMP sin zona de `fecha_medicion`;
+`activo.ultima_actualizacion` conserva únicamente la fecha de Lima.
+
+Verificación de esta etapa:
+
+```powershell
+python -m pytest -q tests/unitarios tests/integracion/test_servidor.py
+```
+
+Las dos pruebas de integración de servidor levantan simuladores temporales en
+puertos locales disponibles y los cierran al terminar. Requieren `snmpsim`.
+Las pruebas de persistencia usan conexiones de prueba controladas para verificar
+SQL parametrizado, relaciones, commit y rollback. La escritura contra PostgreSQL
+real no se verificó en este entorno, que no tiene una conexión de base configurada.

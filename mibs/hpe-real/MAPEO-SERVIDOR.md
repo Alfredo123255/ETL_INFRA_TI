@@ -261,10 +261,21 @@ IP-MIB, sección 3) — con la salvedad de que, al no exponer este agente su pro
 
 ## 6. Campos generados por el ETL (ni SNMP ni manual)
 
-- `ultima_actualizacion`: no es un dato del servidor ni un valor que se lea de ningún OID ni que
-  se llene a mano. Es la fecha/hora en que el proceso de carga del ETL escribe (inserta o
-  actualiza) el registro en la base de datos. El futuro script de carga (todavía no existe en
-  este repositorio) debe asignarle la fecha/hora actual **en el momento de insertar o
-  actualizar el registro**, no leerla de ninguna fuente externa (ni del agente SNMP, ni de un
-  archivo, ni de un valor calculado a partir de otro campo). No corresponde agregar este campo
-  a ningún `public.snmprec`.
+- `ultima_actualizacion`: no se lee de SNMP ni se llena a mano. El ETL asigna la fecha
+  actual de Lima **antes de la carga**, después de preparar los datos del activo.
+  El esquema R6 almacena DATE, por lo que este campo no conserva la hora.
+  No corresponde agregarlo a ningún `public.snmprec`.
+
+### Ubicación y nombres de serie en el esquema R6
+
+- `sysLocation.0` (`1.3.6.1.2.1.1.6.0`, objeto estándar) está poblado en los
+  simuladores rack con textos como `DataCenter-1 / Rack A12 / U18-19`. El extractor
+  conserva ese texto. `activo.ubicacion` referencia `datacenters(nombre)`, por lo
+  que se necesita una regla explícita para resolver el nombre del datacenter.
+- `serie` en los componentes equivale a `numero_serial` en el esquema. El activo
+  mantiene su columna `numero_serie`. Las MIB también permiten consultar
+  `cpqDaPhyDrvSerialNum` (columna 51 de la tabla de discos),
+  `cpqHeFltTolPowerSupplySerialNumber` (columna 11 de fuentes) y
+  `cpqSeCPUSerialNumber` (columna 16 de CPU); valores vacíos se conservan como NULL.
+- `cpuTotalGhz` lo calcula el backend a partir de las CPUs. `cpuUsoGhz` y
+  `ramUsoGb` son mediciones históricas, no columnas de la tabla `servidor`.

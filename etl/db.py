@@ -1,19 +1,31 @@
-"""
-Administra la conexión a la base de datos PostgreSQL con psycopg2, sin ORM.
+"""Conexiones PostgreSQL y transacciones; trabaja sobre el esquema existente."""
+from contextlib import contextmanager
+import psycopg2
+from etl.errores import BaseNoDisponible
 
-Regla de este módulo (y de todo el ETL): el esquema de la base de datos pertenece a otro módulo
-del sistema y es transversal a toda la plataforma. El ETL nunca crea, modifica ni elimina
-tablas, columnas, índices ni restricciones — solo abre conexiones y ejecuta lecturas y
-escrituras de filas sobre tablas que ya existen. Ninguna sentencia DDL (CREATE, ALTER, DROP)
-debe aparecer en este módulo ni en ningún otro de etl/.
 
-Funciones:
-- obtener_conexion() -> psycopg2.extensions.connection: abre una conexión nueva usando los datos
-  de config.Configuracion.
-- conexion_bd(): context manager que entrega una conexión abierta y la cierra (con commit o
-  rollback según corresponda) al salir del bloque `with`.
-- cerrar_conexion(conexion) -> None: cierra explícitamente una conexión abierta.
+def obtener_conexion(config):
+    if config.database_url is None:
+        raise BaseNoDisponible("Falta configurar DATABASE_URL para registrar activos.")
+    try:
+        return psycopg2.connect(config.database_url.get_secret_value(),
+            connect_timeout=config.db_timeout,
+            options="-c statement_timeout=15000 -c lock_timeout=5000")
+    except psycopg2.Error:
+        raise BaseNoDisponible("No se pudo conectar con PostgreSQL.") from None
 
-Dependencias: config.py (credenciales de conexión). Lo usan repositorio.py y carga.py para
-obtener la conexión con la que ejecutan sus consultas.
-"""
+
+@contextmanager
+def conexion_bd(config):
+    conexion = obtener_conexion(config)
+    try:
+        yield conexion
+        conexion.commit()
+    except BaseException:
+        try:
+            conexion.rollback()
+        except psycopg2.Error:
+            pass
+        raise
+    finally:
+        conexion.close()

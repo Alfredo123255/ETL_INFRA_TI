@@ -1,12 +1,15 @@
 """Prueba SNMPv3 SHA/AES; un motor por petición, cerrado incluso al cancelar."""
 from time import perf_counter
+from dataclasses import dataclass, field
+from pydantic import SecretStr
 from pysnmp.hlapi.asyncio import (
     ContextData, ObjectIdentity, ObjectType, SnmpEngine, UdpTransportTarget,
-    Udp6TransportTarget, UsmUserData, getCmd, nextCmd,
+    Udp6TransportTarget, UsmUserData, getCmd, nextCmd, bulkCmd,
     usmAesCfb128Protocol, usmHMACSHAAuthProtocol,
 )
 from pysnmp.proto import rfc1905
 from etl.detector import detectar_tipo, fabricante
+from etl.errores import ErrorExtraccion
 
 SYSTEM_OIDS = ("1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0")
 MESSAGES = {
@@ -79,3 +82,89 @@ async def probar_conexion(host, puerto, usuario, clave, clave_privacidad, config
         return fallo(mapear_error(exc), elapsed())
     finally:
         engine.closeDispatcher()
+
+
+@dataclass(frozen=True)
+class ConexionSNMP:
+    host: str
+    puerto: int
+    usuario: str = field(repr=False)
+    clave: SecretStr = field(repr=False)
+    clave_privacidad: SecretStr | None = field(default=None, repr=False)
+    contexto: str = ""
+    timeout: float = 3
+    reintentos: int = 1
+
+
+class SesionSNMP:
+    """Motor reutilizable para un ciclo; usar dentro del bucle asíncrono activo."""
+
+    def __init__(self, conexion):
+        self.conexion = conexion
+
+    def __enter__(self):
+        self.motor = SnmpEngine()
+        try:
+            c = self.conexion
+            self.auth = UsmUserData(c.usuario, authKey=c.clave.get_secret_value(),
+                privKey=(c.clave_privacidad or c.clave).get_secret_value(),
+                authProtocol=usmHMACSHAAuthProtocol, privProtocol=usmAesCfb128Protocol)
+            transport = Udp6TransportTarget if ":" in c.host else UdpTransportTarget
+            self.destino = transport((c.host, c.puerto), timeout=c.timeout, retries=c.reintentos)
+            self.contexto = ContextData(contextName=c.contexto)
+        except Exception:
+            self.motor.closeDispatcher()
+            raise ErrorExtraccion() from None
+        return self
+
+    def __exit__(self, *exc):
+        self.motor.closeDispatcher()
+
+    async def _consultar(self, comando, *args):
+        try:
+            error, status, _, valores = await comando(
+                self.motor, self.auth, self.destino, self.contexto, *args, lookupMib=False)
+        except Exception as exc:
+            raise ErrorExtraccion(mapear_error(exc)) from None
+        if error or status:
+            raise ErrorExtraccion(mapear_error(error or status))
+        return valores
+
+    async def obtener(self, oids):
+        resultado = {}
+        for inicio in range(0, len(oids), 12):
+            lote = oids[inicio:inicio + 12]
+            valores = await self._consultar(getCmd,
+                *(ObjectType(ObjectIdentity(oid)) for oid in lote))
+            if len(valores) != len(lote):
+                raise ErrorExtraccion()
+            for esperado, (oid, valor) in zip(lote, valores):
+                if str(oid) != esperado:
+                    raise ErrorExtraccion()
+                if not valor_ausente(valor):
+                    resultado[str(oid)] = valor
+        return resultado
+
+    async def recorrer(self, raiz, limite=10000):
+        """GETBULK acotado al subárbol; rechaza OID repetidos o decrecientes."""
+        prefijo = tuple(map(int, raiz.split(".")))
+        anterior = prefijo
+        resultado = {}
+        while True:
+            filas = await self._consultar(bulkCmd, 0, 25,
+                ObjectType(ObjectIdentity(".".join(map(str, anterior)))))
+            if not filas:
+                raise ErrorExtraccion()
+            for fila in filas:
+                if len(fila) != 1:
+                    raise ErrorExtraccion()
+                oid, valor = fila[0]
+                actual = tuple(oid)
+                if valor_ausente(valor) or actual[:len(prefijo)] != prefijo:
+                    return resultado
+                if actual <= anterior:
+                    raise ErrorExtraccion()
+                resultado[str(oid)] = valor
+                if len(resultado) > limite:
+                    raise ErrorExtraccion()
+                anterior = actual

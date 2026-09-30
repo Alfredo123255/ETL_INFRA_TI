@@ -100,7 +100,8 @@ def test_config_falla_cerrada(monkeypatch):
         cargar_configuracion()
 
 @pytest.mark.parametrize("var,value", [("SNMP_TIMEOUT","nan"),("SNMP_TIMEOUT","-1"),
-    ("SNMP_RETRIES","-1"),("API_PORT","0"),("SNMP_REDES_PERMITIDAS","no-es-cidr")])
+    ("SNMP_RETRIES","-1"),("API_PORT","0"),("SNMP_REDES_PERMITIDAS","no-es-cidr"),
+    ("DB_TIMEOUT","0"),("DB_TIMEOUT","-1")])
 def test_config_invalida(monkeypatch,var,value):
     monkeypatch.setattr("etl.config.load_dotenv",lambda *a:None)
     monkeypatch.setenv(var,value)

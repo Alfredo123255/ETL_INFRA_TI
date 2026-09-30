@@ -1,15 +1,13 @@
-"""
-A partir de una ficha ya normalizada, construye las filas de métrica histórica (serie temporal)
-que se guardan aparte de la ficha del activo: los valores que cambian en cada ciclo (tráfico,
-errores, IOPS y latencia medidos, uso de CPU/RAM, temperatura, consumo), a diferencia de los
-datos descriptivos que ya viven en la ficha (modelo, número de serie, capacidad nominal, etc.).
+"""Construye filas de métricas sin incluirlas como columnas de la ficha."""
+from decimal import Decimal
+from etl.errores import DatosIncompletos
 
-Funciones:
-- construir_metricas(tipo_activo: str, datos_normalizados: dict, marca_tiempo) -> list[dict]:
-  arma la lista de filas de métrica histórica a partir de los campos variables de la ficha
-  normalizada de ese activo.
 
-Dependencias: normalizacion/estados.py y normalizacion/reglas.py (para reutilizar las mismas
-conversiones de unidades que ya aplicó la normalización). Lo usa ciclo.py antes de llamar a
-carga.py.
-"""
+def construir_metricas(tipo_activo, datos_normalizados, marca_tiempo):
+    resultado = []
+    for medicion in datos_normalizados.get("mediciones", []):
+        valor = Decimal(str(medicion["valor"]))
+        if not valor.is_finite():
+            raise DatosIncompletos("Una métrica contiene un valor no válido.")
+        resultado.append({**medicion, "valor": valor, "fecha_medicion": marca_tiempo})
+    return resultado

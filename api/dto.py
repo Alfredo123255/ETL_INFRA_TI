@@ -78,3 +78,28 @@ class ConexionFallida(BaseModel):
                         "clave_privacidad", "nivel_seguridad", "otro"]
     mensaje: str
     milisegundos: int
+
+
+class CrearActivoRequest(ProbarConexionRequest):
+    tipo_servidor: Literal["RACKEABLE", "BLADE"] = "RACKEABLE"
+    ubicacion: str | None = None
+
+    @field_validator("ubicacion")
+    @classmethod
+    def ubicacion_valida(cls, value):
+        if value is not None and (not value.strip() or any(ord(c) < 32 for c in value)):
+            raise ValueError("Ubicación inválida")
+        return value.strip() if value is not None else None
+
+
+class ActivoCreado(BaseModel):
+    ok: Literal[True] = True
+    activo_id: int
+    numero_serie: str
+    hostname: str
+    fabricante: str
+    tipo_activo: Literal["SERVIDOR"] = "SERVIDOR"
+    modelo: str
+    ubicacion: str
+    componentes: dict[str, int]
+    metricas_guardadas: int
