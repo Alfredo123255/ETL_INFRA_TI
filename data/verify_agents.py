@@ -19,6 +19,7 @@ las dos unidades de storage, para comprobar que los valores crecen
 Uso: python data/verify_agents.py
 """
 import asyncio
+import os
 import time
 
 from pysnmp.hlapi.asyncio import (
@@ -30,9 +31,12 @@ from pysnmp.hlapi.asyncio import (
     UdpTransportTarget,
     UsmUserData,
     getCmd,
+    nextCmd,
     usmAesCfb128Protocol,
     usmHMACSHAAuthProtocol,
 )
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Credenciales y OID por agente (ver data/*/README.md) -------------
 AGENTS = [
@@ -344,11 +348,121 @@ async def probar_iops_storage():
             print(f"    [ERROR] {exc}")
 
 
+# --- Walk completo del subarbol 1.3.6.1 vs. filas del public.snmprec -----
+RAIZ_WALK = "1.3.6.1"
+
+
+def _contar_filas_snmprec(nombre_agente):
+    """Cuenta las filas OID|etiqueta|valor no comentadas/no vacias del
+    public.snmprec del agente, y devuelve tambien la lista de sus OID
+    (en el orden del archivo, que ya deberia ser ascendente)."""
+    ruta = os.path.join(REPO_ROOT, "data", nombre_agente, "public.snmprec")
+    oids = []
+    with open(ruta, "r", encoding="ascii", errors="replace") as f:
+        for raw_line in f:
+            linea = raw_line.strip()
+            if not linea or linea.startswith("#"):
+                continue
+            oid = linea.split("|", 1)[0]
+            oids.append(oid)
+    return oids
+
+
+async def _walk_completo(agente):
+    """Recorre por SNMPv3 (GETNEXT sucesivos) todo el subarbol RAIZ_WALK
+    del agente y devuelve la lista de OID (numericos, como string) que
+    respondio, en el orden en que los fue devolviendo."""
+    snmpEngine = SnmpEngine()
+    authData = UsmUserData(
+        agente["usuario"],
+        authKey=agente["auth_key"],
+        privKey=agente["priv_key"],
+        authProtocol=usmHMACSHAAuthProtocol,
+        privProtocol=usmAesCfb128Protocol,
+    )
+    transportTarget = UdpTransportTarget(
+        (agente["host"], agente["puerto"]), timeout=3, retries=1
+    )
+    contextData = ContextData(contextName="public")
+
+    oids_devueltos = []
+    current = ObjectIdentity(RAIZ_WALK)
+
+    while True:
+        errorIndication, errorStatus, errorIndex, varBinds = await nextCmd(
+            snmpEngine,
+            authData,
+            transportTarget,
+            contextData,
+            ObjectType(current),
+            lexicographicMode=False,
+            lookupMib=False,
+        )
+
+        if errorIndication or errorStatus or not varBinds:
+            break
+
+        # nextCmd devuelve una fila (lista) de ObjectType por cada OID
+        # solicitado; con un solo OID pedido, varBinds = [[ObjectType(...)]].
+        # Con lookupMib=False, el nombre viene como ObjectName (no
+        # ObjectIdentity), por eso se convierte con str() directo y se
+        # reconstruye un ObjectIdentity nuevo para la siguiente consulta.
+        nombre, _valor = varBinds[0][0]
+        oid_str = str(nombre)
+
+        if oid_str != RAIZ_WALK and not oid_str.startswith(RAIZ_WALK + "."):
+            break  # se salio del subarbol pedido
+
+        if oids_devueltos and oid_str == oids_devueltos[-1]:
+            break  # proteccion contra bucles (fin de MIB: OID no avanza)
+
+        oids_devueltos.append(oid_str)
+        current = ObjectIdentity(oid_str)
+
+    snmpEngine.closeDispatcher()
+    return oids_devueltos
+
+
+async def probar_walk_completo():
+    print("\n=== Walk completo (GETNEXT sucesivos sobre 1.3.6.1) vs. public.snmprec ===")
+
+    for agente in AGENTS:
+        nombre = agente["nombre"]
+        print(f"\n  -- {nombre} --")
+
+        try:
+            oids_archivo = _contar_filas_snmprec(nombre)
+        except OSError as exc:
+            print(f"    [ERROR] no se pudo leer public.snmprec: {exc}")
+            continue
+
+        oids_walk = await _walk_completo(agente)
+
+        esperados = len(oids_archivo)
+        obtenidos = len(oids_walk)
+        print(f"    filas no comentadas en public.snmprec = {esperados}")
+        print(f"    OID devueltos por el walk            = {obtenidos}")
+
+        if obtenidos == esperados:
+            print("    [OK] el walk devolvio la misma cantidad de OID que el archivo")
+            continue
+
+        faltan = esperados - obtenidos
+        devueltos_set = set(oids_walk)
+        primer_faltante = next(
+            (oid for oid in oids_archivo if oid not in devueltos_set), None
+        )
+        print(f"    [FALLO] faltan {faltan} OID respecto del archivo")
+        if primer_faltante:
+            print(f"    Primer OID del archivo que el walk NO sirvio: {primer_faltante}")
+
+
 async def main():
     for agente in AGENTS:
         await consultar_agente(agente)
     await probar_contadores_crecientes()
     await probar_iops_storage()
+    await probar_walk_completo()
 
 
 if __name__ == "__main__":

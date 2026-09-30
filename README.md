@@ -55,3 +55,15 @@ Si se necesita otra MIB o hay que rehacer un `.snmprec`:
 ```
 snmpsim-record-mibs --mib-module=HUAWEI-DEVICE-MIB --output-file=./data/huawei-sw01/public.snmprec --mib-source=./mibs/huawei --mib-source=https://mibs.pysnmp.com/asn1/@mib@
 ```
+
+## Validar un `.snmprec` antes de hacer commit
+
+Después de editar a mano cualquier `data/<agente>/public.snmprec`, correr el validador estático
+(no levanta ningún agente, revisa formato, etiquetas, rangos de valor, orden ascendente de OID y
+duplicados) antes de commitear:
+```
+python data/validar_snmprec.py
+```
+Termina con código de salida distinto de cero si encuentra algún problema (archivo, línea y
+motivo quedan impresos). Ver también `data/verify_agents.py`, que además de esto hace un walk
+SNMP completo contra cada agente ya levantado y lo compara contra su `.snmprec`.
