@@ -2,15 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 Script de verificacion de los agentes SNMPv3 simulados hpe-dl380-01,
-hpe-dl360-01, hpe-c7000-01, hpe-bl460c-01 y hpe-bl460c-02.
+hpe-dl360-01, hpe-c7000-01, hpe-bl460c-01, hpe-bl460c-02, aruba-cx-sw01,
+hpe-storage-fc-01 y hpe-storage-fc-02.
 
 Hace un GET contra sysDescr.0 y contra 2-4 OID mapeados (ver
-mibs/hpe-real/MAPEO-SERVIDOR.md y mibs/hpe-real/MAPEO-CHASIS.md) de cada
-agente, usando el patron UsmUserData/ContextData de pysnmp para
+mibs/hpe-real/MAPEO-SERVIDOR.md, mibs/hpe-real/MAPEO-CHASIS.md,
+mibs/ALL-Supported-MIBs/MAPEO-SWITCH.md y mibs/hpe-real/MAPEO-STORAGE.md)
+de cada agente, usando el patron UsmUserData/ContextData de pysnmp para
 autenticacion SNMPv3 (auth=SHA, priv=AES). Al final, hace dos GET seguidos
 (con una pausa corta entre medio) sobre un contador Counter32 (cpqnic, en
-un servidor rack) y un contador Counter64 (ifHCInOctets, en el chasis) para
-comprobar que los valores crecen (variacion `numeric` de snmpsim).
+un servidor rack), dos Counter64 (ifHCInOctets en el chasis y en
+aruba-cx-sw01) y los contadores Counter64 de NIMBLE-MIB (globalStats) de
+las dos unidades de storage, para comprobar que los valores crecen
+(variacion `numeric` de snmpsim) y para calcular IOPS/latencia en vivo.
 
 Uso: python data/verify_agents.py
 """
@@ -109,6 +113,50 @@ AGENTS = [
             ("ip_sistema_operativo (ipAdEntAddr)", "1.3.6.1.2.1.4.20.1.1.10.10.12.14"),
         ],
     },
+    {
+        "nombre": "aruba-cx-sw01",
+        "host": "127.0.0.1",
+        "puerto": 16600,
+        "usuario": "monitor_sw01",
+        "auth_key": "2JePukZ17WBQg10i3J3U",
+        "priv_key": "ZynkEa6RTaPcFsqG1Oc5",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("sysObjectID.0 (identidad JL661A)", "1.3.6.1.2.1.1.2.0"),
+            ("numero_serie (arubaWiredModuleSerialNumber)", "1.3.6.1.4.1.47196.4.1.1.3.11.6.1.1.8.1.1.1"),
+            ("version_firmware (arubaWiredSwitchImageVersion.1)", "1.3.6.1.4.1.47196.4.1.1.3.26.1.1.1.1.3.1"),
+            ("temperatura ambiente (arubaWiredTempSensorTemperature)", "1.3.6.1.4.1.47196.4.1.1.3.11.3.1.1.7.1.1.1.1"),
+            ("estado puerto 48 admin down (ifAdminStatus)", "1.3.6.1.2.1.2.2.1.7.48"),
+        ],
+    },
+    {
+        "nombre": "hpe-storage-fc-01",
+        "host": "127.0.0.1",
+        "puerto": 16700,
+        "usuario": "monitor_storagefc01",
+        "auth_key": "RcVQ87sKGKNAXteaPhvF",
+        "priv_key": "87KIBACIxZCukpKjai0Z",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("array serial (cpqSsChassisSerialNumber.1)", "1.3.6.1.4.1.232.8.2.2.1.1.3.1"),
+            ("disco 6 degradado (cpqFcaPhyDrvCondition)", "1.3.6.1.4.1.232.16.2.5.1.1.31.1.6"),
+            ("capacidad_usada low (diskVolBytesUsedLow, PRESTADO Nimble)", "1.3.6.1.4.1.37447.1.3.12.0"),
+        ],
+    },
+    {
+        "nombre": "hpe-storage-fc-02",
+        "host": "127.0.0.1",
+        "puerto": 16800,
+        "usuario": "monitor_storagefc02",
+        "auth_key": "SMkMLpmciBdaLR9pfDux",
+        "priv_key": "2VcFacU3YHQ1CqwgAg7D",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("PSU2 failed (cpqHeFltTolPowerSupplyCondition)", "1.3.6.1.4.1.232.6.2.9.3.1.4.1.2"),
+            ("RAID faultTol mirroring (cpqFcaLogDrvFaultTol)", "1.3.6.1.4.1.232.16.2.3.1.1.3.1.1"),
+            ("IOPS lectura acumuladas (ioReads, PRESTADO Nimble)", "1.3.6.1.4.1.37447.1.3.2.0"),
+        ],
+    },
 ]
 
 # --- OID de contadores crecientes (variacion `numeric` de snmpsim) -----
@@ -132,6 +180,17 @@ CONTADOR_COUNTER64 = {
     "priv_key": "NR2yILtdOtWShA70stgf",
     "etiqueta": "ifHCInOctets puerto X1 (Counter64, tag 70)",
     "oid": "1.3.6.1.2.1.31.1.1.1.6.1",
+}
+
+CONTADOR_COUNTER64_SWITCH = {
+    "agente": "aruba-cx-sw01",
+    "host": "127.0.0.1",
+    "puerto": 16600,
+    "usuario": "monitor_sw01",
+    "auth_key": "2JePukZ17WBQg10i3J3U",
+    "priv_key": "ZynkEa6RTaPcFsqG1Oc5",
+    "etiqueta": "ifHCInOctets puerto 1/1/49 up (Counter64, tag 70)",
+    "oid": "1.3.6.1.2.1.31.1.1.1.6.49",
 }
 
 
@@ -203,7 +262,7 @@ async def _get_valor(cfg, oid):
 async def probar_contadores_crecientes():
     print("\n=== Prueba de contadores crecientes (dos GET seguidos) ===")
 
-    for cfg in (CONTADOR_COUNTER32, CONTADOR_COUNTER64):
+    for cfg in (CONTADOR_COUNTER32, CONTADOR_COUNTER64, CONTADOR_COUNTER64_SWITCH):
         print(f"\n  {cfg['agente']}: {cfg['etiqueta']} ({cfg['oid']})")
         try:
             valor1 = await _get_valor(cfg, cfg["oid"])
@@ -219,10 +278,77 @@ async def probar_contadores_crecientes():
             print(f"    [ERROR] {exc}")
 
 
+# --- IOPS y latencia en vivo (NIMBLE-MIB globalStats, PRESTADO) -----------
+NIMBLE_UNITS = [
+    {
+        "agente": "hpe-storage-fc-01",
+        "host": "127.0.0.1",
+        "puerto": 16700,
+        "usuario": "monitor_storagefc01",
+        "auth_key": "RcVQ87sKGKNAXteaPhvF",
+        "priv_key": "87KIBACIxZCukpKjai0Z",
+    },
+    {
+        "agente": "hpe-storage-fc-02",
+        "host": "127.0.0.1",
+        "puerto": 16800,
+        "usuario": "monitor_storagefc02",
+        "auth_key": "SMkMLpmciBdaLR9pfDux",
+        "priv_key": "2VcFacU3YHQ1CqwgAg7D",
+    },
+]
+NIMBLE_OIDS = {
+    "reads": "1.3.6.1.4.1.37447.1.3.2.0",
+    "writes": "1.3.6.1.4.1.37447.1.3.4.0",
+    "readtime": "1.3.6.1.4.1.37447.1.3.6.0",
+    "writetime": "1.3.6.1.4.1.37447.1.3.7.0",
+    "readbytes": "1.3.6.1.4.1.37447.1.3.8.0",
+    "writebytes": "1.3.6.1.4.1.37447.1.3.10.0",
+}
+
+
+async def probar_iops_storage():
+    print("\n=== IOPS y latencia calculados en vivo (NIMBLE-MIB, PRESTADO) ===")
+
+    for cfg in NIMBLE_UNITS:
+        print(f"\n  -- {cfg['agente']} --")
+        try:
+            t0 = time.time()
+            v1 = {k: await _get_valor(cfg, oid) for k, oid in NIMBLE_OIDS.items()}
+            time.sleep(5)
+            t1 = time.time()
+            v2 = {k: await _get_valor(cfg, oid) for k, oid in NIMBLE_OIDS.items()}
+            dt = t1 - t0
+
+            d_reads = v2["reads"] - v1["reads"]
+            d_writes = v2["writes"] - v1["writes"]
+            d_readtime = v2["readtime"] - v1["readtime"]
+            d_writetime = v2["writetime"] - v1["writetime"]
+            d_readbytes = v2["readbytes"] - v1["readbytes"]
+            d_writebytes = v2["writebytes"] - v1["writebytes"]
+
+            iops_r = d_reads / dt
+            iops_w = d_writes / dt
+            mbps_r = d_readbytes / dt / (1024 * 1024)
+            mbps_w = d_writebytes / dt / (1024 * 1024)
+            lat_r_ms = (d_readtime / d_reads) / 1000 if d_reads else 0
+            lat_w_ms = (d_writetime / d_writes) / 1000 if d_writes else 0
+
+            print(f"    intervalo medido = {dt:.2f} s")
+            print(f"    IOPS lectura/escritura/total = {iops_r:.1f} / {iops_w:.1f} / {iops_r + iops_w:.1f}")
+            print(f"    Throughput lectura/escritura = {mbps_r:.2f} / {mbps_w:.2f} MB/s")
+            print(f"    Latencia media lectura/escritura = {lat_r_ms:.3f} / {lat_w_ms:.3f} ms")
+            print("    [OK] los contadores crecieron" if d_reads > 0 and d_writes > 0
+                  else "    [FALLO] los contadores no crecieron")
+        except RuntimeError as exc:
+            print(f"    [ERROR] {exc}")
+
+
 async def main():
     for agente in AGENTS:
         await consultar_agente(agente)
     await probar_contadores_crecientes()
+    await probar_iops_storage()
 
 
 if __name__ == "__main__":
