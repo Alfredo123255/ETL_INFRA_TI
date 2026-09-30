@@ -1,0 +1,10 @@
+# Variables de entorno reales (credenciales de base de datos, clave de cifrado, API key).
+# Copiar .env.example a .env y completar ahi, nunca versionar .env.
+.env
+
+# Bytecode compilado de Python.
+__pycache__/
+
+# Entorno y resultados locales de pruebas.
+.venv/
+.pytest_cache/
