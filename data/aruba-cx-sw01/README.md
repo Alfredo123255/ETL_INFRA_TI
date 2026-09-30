@@ -30,7 +30,7 @@ python data/run_responder.py \
   --v3-user=monitor_sw01 \
   --v3-auth-key='2JePukZ17WBQg10i3J3U' --v3-auth-proto=SHA \
   --v3-priv-key='ZynkEa6RTaPcFsqG1Oc5' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16600 \
+  --agent-udpv4-endpoint=127.0.0.20:16600 \
   --data-dir="<ruta-absoluta-al-repo>\data\aruba-cx-sw01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -45,7 +45,7 @@ También se puede levantar junto con el resto de agentes vía
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.20` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16600** |
 | Verificado libre con | `netstat -ano \| findstr :16600` antes de asignarlo |
 
@@ -81,7 +81,7 @@ snmpget -v3 -u monitor_sw01 -l authPriv \
   -a SHA -A '2JePukZ17WBQg10i3J3U' \
   -x AES -X 'ZynkEa6RTaPcFsqG1Oc5' \
   -n public \
-  127.0.0.1:16600 1.3.6.1.2.1.1.1.0
+  127.0.0.20:16600 1.3.6.1.2.1.1.1.0
 ```
 
 ## Índice de caché

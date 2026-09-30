@@ -20,7 +20,7 @@ python data/run_responder.py \
   --v3-user=monitor_c7000 \
   --v3-auth-key='cy8EcO4BePPAN9Os5zts' --v3-auth-proto=SHA \
   --v3-priv-key='NR2yILtdOtWShA70stgf' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16300 \
+  --agent-udpv4-endpoint=127.0.0.15:16300 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-c7000-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -32,7 +32,7 @@ rutas relativas snmpsim arma la ruta del índice `.dbm` mal y falla con `FileNot
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.15` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16300** (distinto de 16100 y 16200, usados por los servidores) |
 | Verificado libre con | `netstat -ano \| grep 16300` antes de asignarlo |
 
@@ -69,7 +69,7 @@ snmpget -v3 -u monitor_c7000 -l authPriv \
   -a SHA -A 'cy8EcO4BePPAN9Os5zts' \
   -x AES -X 'NR2yILtdOtWShA70stgf' \
   -n public \
-  127.0.0.1:16300 1.3.6.1.2.1.1.1.0
+  127.0.0.15:16300 1.3.6.1.2.1.1.1.0
 ```
 
 ## Índice de caché

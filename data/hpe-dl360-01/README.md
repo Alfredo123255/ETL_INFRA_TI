@@ -24,7 +24,7 @@ python data/run_responder.py \
   --v3-user=monitor_dl360 \
   --v3-auth-key='3nRFCWnSuDougjTVD3SV' --v3-auth-proto=SHA \
   --v3-priv-key='Wru30SG1uouCjtcd5h7P' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16200 \
+  --agent-udpv4-endpoint=127.0.0.12:16200 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-dl360-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -37,7 +37,7 @@ falla con `FileNotFoundError` porque el subdirectorio intermedio no existe.
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.12` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16200** |
 | Verificado libre con | `netstat -ano \| grep 16200` antes de asignarlo |
 
@@ -77,7 +77,7 @@ snmpget -v3 -u monitor_dl360 -l authPriv \
   -a SHA -A '3nRFCWnSuDougjTVD3SV' \
   -x AES -X 'Wru30SG1uouCjtcd5h7P' \
   -n public \
-  127.0.0.1:16200 1.3.6.1.2.1.1.1.0
+  127.0.0.12:16200 1.3.6.1.2.1.1.1.0
 ```
 
 ## Índice de caché

@@ -42,7 +42,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS = [
     {
         "nombre": "hpe-dl380-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.11",
         "puerto": 16100,
         "usuario": "monitor_dl380",
         "auth_key": "Kr7aY5nT2LdUco2B5IAZ",
@@ -58,7 +58,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-dl360-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.12",
         "puerto": 16200,
         "usuario": "monitor_dl360",
         "auth_key": "3nRFCWnSuDougjTVD3SV",
@@ -73,7 +73,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-c7000-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.15",
         "puerto": 16300,
         "usuario": "monitor_c7000",
         "auth_key": "cy8EcO4BePPAN9Os5zts",
@@ -89,7 +89,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-bl460c-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.13",
         "puerto": 16400,
         "usuario": "monitor_bl460c01",
         "auth_key": "Yb2QzP9mLxT4wVh8Kd3R",
@@ -104,7 +104,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-bl460c-02",
-        "host": "127.0.0.1",
+        "host": "127.0.0.14",
         "puerto": 16500,
         "usuario": "monitor_bl460c02",
         "auth_key": "Ht4RxQ8kMbZ3vNp6Ld1J",
@@ -119,7 +119,7 @@ AGENTS = [
     },
     {
         "nombre": "aruba-cx-sw01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.20",
         "puerto": 16600,
         "usuario": "monitor_sw01",
         "auth_key": "2JePukZ17WBQg10i3J3U",
@@ -135,7 +135,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-storage-fc-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.30",
         "puerto": 16700,
         "usuario": "monitor_storagefc01",
         "auth_key": "RcVQ87sKGKNAXteaPhvF",
@@ -149,7 +149,7 @@ AGENTS = [
     },
     {
         "nombre": "hpe-storage-fc-02",
-        "host": "127.0.0.1",
+        "host": "127.0.0.31",
         "puerto": 16800,
         "usuario": "monitor_storagefc02",
         "auth_key": "SMkMLpmciBdaLR9pfDux",
@@ -166,7 +166,7 @@ AGENTS = [
 # --- OID de contadores crecientes (variacion `numeric` de snmpsim) -----
 CONTADOR_COUNTER32 = {
     "agente": "hpe-dl380-01",
-    "host": "127.0.0.1",
+    "host": "127.0.0.11",
     "puerto": 16100,
     "usuario": "monitor_dl380",
     "auth_key": "Kr7aY5nT2LdUco2B5IAZ",
@@ -177,7 +177,7 @@ CONTADOR_COUNTER32 = {
 
 CONTADOR_COUNTER64 = {
     "agente": "hpe-c7000-01",
-    "host": "127.0.0.1",
+    "host": "127.0.0.15",
     "puerto": 16300,
     "usuario": "monitor_c7000",
     "auth_key": "cy8EcO4BePPAN9Os5zts",
@@ -188,7 +188,7 @@ CONTADOR_COUNTER64 = {
 
 CONTADOR_COUNTER64_SWITCH = {
     "agente": "aruba-cx-sw01",
-    "host": "127.0.0.1",
+    "host": "127.0.0.20",
     "puerto": 16600,
     "usuario": "monitor_sw01",
     "auth_key": "2JePukZ17WBQg10i3J3U",
@@ -286,7 +286,7 @@ async def probar_contadores_crecientes():
 NIMBLE_UNITS = [
     {
         "agente": "hpe-storage-fc-01",
-        "host": "127.0.0.1",
+        "host": "127.0.0.30",
         "puerto": 16700,
         "usuario": "monitor_storagefc01",
         "auth_key": "RcVQ87sKGKNAXteaPhvF",
@@ -294,7 +294,7 @@ NIMBLE_UNITS = [
     },
     {
         "agente": "hpe-storage-fc-02",
-        "host": "127.0.0.1",
+        "host": "127.0.0.31",
         "puerto": 16800,
         "usuario": "monitor_storagefc02",
         "auth_key": "SMkMLpmciBdaLR9pfDux",

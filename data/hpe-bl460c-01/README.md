@@ -38,7 +38,7 @@ python data/run_responder.py \
   --v3-user=monitor_bl460c01 \
   --v3-auth-key='Yb2QzP9mLxT4wVh8Kd3R' --v3-auth-proto=SHA \
   --v3-priv-key='Ft6NcE1oRgJ5sWp2Ux9M' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16400 \
+  --agent-udpv4-endpoint=127.0.0.13:16400 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-bl460c-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -51,7 +51,7 @@ agentes: con rutas relativas snmpsim arma la ruta del índice `.dbm` mal y falla
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.13` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16400** (distinto de 16100/16200/16300 usados por los otros tres agentes) |
 | Verificado libre con | `netstat -ano \| grep 16400` antes de asignarlo |
 
@@ -88,7 +88,7 @@ snmpget -v3 -u monitor_bl460c01 -l authPriv \
   -a SHA -A 'Yb2QzP9mLxT4wVh8Kd3R' \
   -x AES -X 'Ft6NcE1oRgJ5sWp2Ux9M' \
   -n public \
-  127.0.0.1:16400 1.3.6.1.2.1.1.1.0
+  127.0.0.13:16400 1.3.6.1.2.1.1.1.0
 ```
 
 ## Índice de caché

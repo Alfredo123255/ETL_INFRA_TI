@@ -28,7 +28,7 @@ python data/run_responder.py \
   --v3-user=monitor_storagefc02 \
   --v3-auth-key='SMkMLpmciBdaLR9pfDux' --v3-auth-proto=SHA \
   --v3-priv-key='2VcFacU3YHQ1CqwgAg7D' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16800 \
+  --agent-udpv4-endpoint=127.0.0.31:16800 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-storage-fc-02" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -40,7 +40,7 @@ el resto de agentes vía [`data/start_agents.bat`](../start_agents.bat).
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.31` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16800** |
 | Verificado libre con | `netstat -ano \| findstr :16800` antes de asignarlo |
 
@@ -75,7 +75,7 @@ snmpget -v3 -u monitor_storagefc02 -l authPriv \
   -a SHA -A 'SMkMLpmciBdaLR9pfDux' \
   -x AES -X '2VcFacU3YHQ1CqwgAg7D' \
   -n public \
-  127.0.0.1:16800 1.3.6.1.2.1.1.1.0
+  127.0.0.31:16800 1.3.6.1.2.1.1.1.0
 ```
 
 ## Especificaciones simuladas (resumen)

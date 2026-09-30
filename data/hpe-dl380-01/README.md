@@ -24,7 +24,7 @@ python data/run_responder.py \
   --v3-user=monitor_dl380 \
   --v3-auth-key='Kr7aY5nT2LdUco2B5IAZ' --v3-auth-proto=SHA \
   --v3-priv-key='GpoJkRAhPOZg3vA4qHyT' --v3-priv-proto=AES \
-  --agent-udpv4-endpoint=127.0.0.1:16100 \
+  --agent-udpv4-endpoint=127.0.0.11:16100 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-dl380-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
 ```
@@ -37,7 +37,7 @@ falla con `FileNotFoundError` porque el subdirectorio intermedio no existe.
 
 | | |
 |---|---|
-| Host | `127.0.0.1` (sólo loopback) |
+| Host | `127.0.0.11` (loopback; Windows trata todo `127.0.0.0/8` como loopback, así que cada agente puede usar una IP distinta sin configuración adicional — ver `data/verify_agents.py` para la lista completa) |
 | Puerto UDP | **16100** |
 | Verificado libre con | `netstat -ano \| grep 16100` antes de asignarlo |
 
@@ -76,7 +76,7 @@ snmpget -v3 -u monitor_dl380 -l authPriv \
   -a SHA -A 'Kr7aY5nT2LdUco2B5IAZ' \
   -x AES -X 'GpoJkRAhPOZg3vA4qHyT' \
   -n public \
-  127.0.0.1:16100 1.3.6.1.2.1.1.1.0
+  127.0.0.11:16100 1.3.6.1.2.1.1.1.0
 ```
 
 ## Índice de caché
