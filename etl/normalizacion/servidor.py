@@ -149,15 +149,21 @@ def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABL
             tarjeta["cantidad_puertos"] = len(tarjeta["puertos"])
             tarjeta["estado"] = max((p["estado"] for p in tarjeta["puertos"]), key=prioridad.get)
             componentes["tarjeta_red"].append(tarjeta)
-    # El total de GHz de la ficha lo calcula el backend. Aquí solo se deriva la métrica de uso.
+    # Misma base que el backend: GHz de cada CPU multiplicados por sus núcleos.
+    # El total sigue siendo derivado en el backend; aquí solo se guarda la métrica de uso.
     porcentajes = [numero(f.get("porcentaje")) for _, f in tablas["uso_cpu"]]
-    velocidades = [c["velocidad_ghz"] for c in componentes["cpu"]]
-    if porcentajes and all(p is not None and 0 <= p <= 100 for p in porcentajes) and velocidades and all(v is not None for v in velocidades):
-        uso = sum(velocidades) * Decimal(sum(porcentajes)) / Decimal(len(porcentajes) * 100)
-        mediciones.append({"nombre_metrica": "cpuUsoGhz", "valor": uso})
+    cpus = componentes["cpu"]
+    capacidad_completa = cpus and all(
+        c["velocidad_ghz"] is not None and c["velocidad_ghz"] > 0
+        and c["cantidad_nucleos"] is not None and c["cantidad_nucleos"] > 0
+        for c in cpus)
+    if porcentajes and all(p is not None and 0 <= p <= 100 for p in porcentajes) and capacidad_completa:
+        capacidad_ghz = sum(c["velocidad_ghz"] * c["cantidad_nucleos"] for c in cpus)
+        uso = capacidad_ghz * Decimal(sum(porcentajes)) / Decimal(len(porcentajes) * 100)
+        mediciones.append({"nombre_metrica": "cpu_uso_ghz", "valor": uso})
     total, libre = numero(identidad["ram_total_mb"]), numero(identidad["ram_libre_mb"])
     if total is not None and libre is not None and 0 <= libre <= total:
-        mediciones.append({"nombre_metrica": "ramUsoGb", "valor": mb_a_gb(total - libre)})
+        mediciones.append({"nombre_metrica": "ram_uso_gb", "valor": mb_a_gb(total - libre)})
     for campo in ("temperatura", "consumo_electrico_w"):
         if activo[campo] is not None:
             mediciones.append({"nombre_metrica": campo, "valor": activo[campo]})

@@ -318,8 +318,13 @@ extracción, normalización y registro inicial en PostgreSQL mediante
   transacción única para registrar activo, servidor, componentes, puertos y métricas.
 - `etl/metricas.py`: prepara las mediciones para `metrica_historica`.
 
-`cpuTotalGhz` queda a cargo del backend. `cpuUsoGhz` y `ramUsoGb` se devuelven
-como mediciones. `serie` de componentes se normaliza a `numero_serial`; la serie
+`cpuTotalGhz` queda a cargo del backend. `cpu_uso_ghz` y `ram_uso_gb` se devuelven
+como mediciones, con los nombres que consume el backend y usa la migración de
+Excel. La base para calcular el uso de CPU es la suma de velocidad en GHz ×
+cantidad de núcleos de cada CPU; sobre esa capacidad se aplica el porcentaje
+SNMP (promedio de las filas de utilización válidas). Si faltan velocidades o
+núcleos válidos, no se genera una métrica de uso de CPU parcial.
+`serie` de componentes se normaliza a `numero_serial`; la serie
 del activo es `numero_serie`. La fecha `ultima_actualizacion` se asigna antes de
 la futura carga, con fecha de Lima y tipo DATE. Los campos sin fuente quedan
 vacíos; la revisión de arquitectura de CPU no se interpreta como familia.

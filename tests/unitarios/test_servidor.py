@@ -11,7 +11,7 @@ import etl.snmp_cliente as snmp
 import etl.extraccion.servidor as extraccion
 from etl.errores import DatosIncompletos, ErrorExtraccion, PerfilNoSoportado
 from etl.normalizacion.servidor import normalizar_servidor_hpe
-from etl.oids.servidor import OIDS_IDENTIDAD
+from etl.oids.servidor import OIDS_IDENTIDAD, OIDS_CPU, OIDS_USO_CPU
 
 FECHA = date(2026, 9, 30)
 RAIZ = Path(__file__).resolve().parents[2]
@@ -57,7 +57,7 @@ def test_ficha_real_simulada(agente, cpus, memorias, discos, tarjetas, uso):
     assert c["tarjeta_red"][0]["puertos"][0]["mac_address"].count(":") == 5
     assert "cpuTotalGhz" not in ficha["servidor"]
     if uso is not None:
-        assert next(m["valor"] for m in ficha["mediciones"] if m["nombre_metrica"] == "ramUsoGb") == uso
+        assert next(m["valor"] for m in ficha["mediciones"] if m["nombre_metrica"] == "ram_uso_gb") == uso
 
 
 def test_tablas_y_estados_especificos():
@@ -70,7 +70,37 @@ def test_tablas_y_estados_especificos():
     assert c["tarjeta_red"][1]["puertos"][0]["velocidad"] == "10000 Mbps"
     assert ficha["activo"]["temperatura"] == 22
     assert ficha["servidor"]["ip_sistema_operativo"] == "10.10.12.11"
-    assert next(m["valor"] for m in ficha["mediciones"] if m["nombre_metrica"] == "cpuUsoGhz") == Decimal("1.764")
+    assert next(m["valor"] for m in ficha["mediciones"] if m["nombre_metrica"] == "cpu_uso_ghz") == Decimal("35.28")
+
+
+@pytest.mark.parametrize("porcentaje,uso_esperado", [(0, "0"), (25, "16"), (100, "64")])
+def test_uso_cpu_comparte_base_del_backend(porcentaje, uso_esperado):
+    datos = registros("hpe-dl380-01")
+    # CPU 1: 2.5 GHz y 16 núcleos; CPU 2: 3 GHz y 8 núcleos. Total: 64 GHz.
+    datos[OIDS_CPU["velocidad_mhz"] + ".1"] = rfc1902.Integer(2500)
+    datos[OIDS_CPU["cantidad_nucleos"] + ".1"] = rfc1902.Integer(16)
+    datos[OIDS_CPU["velocidad_mhz"] + ".2"] = rfc1902.Integer(3000)
+    datos[OIDS_CPU["cantidad_nucleos"] + ".2"] = rfc1902.Integer(8)
+    datos[OIDS_USO_CPU["porcentaje"] + ".1"] = rfc1902.Integer(porcentaje)
+    ficha = normalizar_servidor_hpe(datos, fecha_actualizacion=FECHA)
+    metricas = {m["nombre_metrica"]: m["valor"] for m in ficha["mediciones"]}
+    assert metricas["cpu_uso_ghz"] == Decimal(uso_esperado)
+    assert metricas["cpu_uso_ghz"] / Decimal(64) * 100 == porcentaje
+    assert metricas["ram_uso_gb"] == 74
+
+
+@pytest.mark.parametrize("nucleos", [None, 0, -1])
+def test_sin_nucleos_validos_no_inventa_uso_cpu(nucleos):
+    datos = registros("hpe-dl380-01")
+    oid = OIDS_CPU["cantidad_nucleos"] + ".1"
+    if nucleos is None:
+        datos.pop(oid)
+    else:
+        datos[oid] = rfc1902.Integer(nucleos)
+    ficha = normalizar_servidor_hpe(datos, fecha_actualizacion=FECHA)
+    metricas = {m["nombre_metrica"]: m["valor"] for m in ficha["mediciones"]}
+    assert "cpu_uso_ghz" not in metricas
+    assert "ram_uso_gb" in metricas
 
 
 def test_blade_no_duplica_componentes_del_chasis():

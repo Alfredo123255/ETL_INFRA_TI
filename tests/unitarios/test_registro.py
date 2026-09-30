@@ -1,4 +1,5 @@
 from dataclasses import replace
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 import psycopg2
@@ -69,6 +70,9 @@ def test_registro_guarda_relaciones_modelo_y_metricas(ficha, conexion):
     sql_metricas, metricas = cursor.executemany.call_args.args
     assert "metrica_historica" in sql_metricas
     assert all(m[0] == 10 and m[5].tzinfo is None for m in metricas)
+    valores_metricas = {m[3]: m[4] for m in metricas}
+    assert valores_metricas["cpu_uso_ghz"] == Decimal("35.28")
+    assert valores_metricas["ram_uso_gb"] == 74
     connection.commit.assert_called_once()
     connection.rollback.assert_not_called()
     connection.close.assert_called_once()

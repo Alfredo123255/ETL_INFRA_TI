@@ -66,10 +66,10 @@ realidad con el agente arriba.
 | `estado_operativo` | `1.3.6.1.4.1.232.6.1.3` (`cpqHeMibCondition`) | CPQHLTH-MIB | INTEGER `other/ok/degraded/failed` → ver tabla EstadoEnum arriba |
 | `temperatura` | `1.3.6.1.4.1.232.6.2.6.8.1.4` (`cpqHeTemperatureCelsius`), instancia por sensor vía `cpqHeTemperatureLocale` (`...8.1.3`) | CPQHLTH-MIB | INTEGER, grados Celsius. Se usará el sensor `ambient(11)` como temperatura representativa del sistema. |
 | `consumo_electico_w` | `1.3.6.1.4.1.232.6.2.15.3` (`cpqHePowerMeterCurrReading`) | CPQHLTH-MIB | INTEGER, vatios. Escalar (no tabla) |
-| `cpuTotalGhz` | Derivado de `cpqSeCpuSpeed` (`1.3.6.1.4.1.232.1.2.2.1.1.4`, MHz) sumado/promediado por todas las entradas de `cpqSeCpuTable` | CPQSTDEQ-MIB | El MIB da MHz por CPU individual, no un total de sistema; `cpuTotalGhz` es un cálculo de la ETL (suma de `cpqSeCpuSpeed` de cada CPU física, convertido a GHz), no un OID único. |
-| `cpuUsoGhz` | Derivado de `cpqHoCpuUtilMin` (`1.3.6.1.4.1.232.11.2.3.1.1.2`, % de uso) aplicado sobre `cpuTotalGhz` | CPQHOST-MIB | `cpqHoCpuUtilMin` es un **porcentaje** de utilización, no GHz. `cpuUsoGhz` = `cpuTotalGhz * (cpqHoCpuUtilMin/100)`, cálculo de la ETL. |
+| `cpuTotalGhz` | Derivado de `cpqSeCpuSpeed` (`1.3.6.1.4.1.232.1.2.2.1.1.4`, MHz) y `cpqSeCpuCore` (`...1.1.15`, núcleos) | CPQSTDEQ-MIB | Lo calcula el backend como suma de `(velocidad_mhz / 1000) × cantidad_nucleos` por cada CPU. El ETL usa la misma base para derivar el uso, sin guardar el total como columna o métrica. |
+| `cpu_uso_ghz` | Derivado de `cpqHoCpuUtilMin` (`1.3.6.1.4.1.232.11.2.3.1.1.2`, % de uso) aplicado sobre la capacidad total de CPU | CPQHOST-MIB | Se aplica el porcentaje de uso (promedio de las filas válidas) a la suma de velocidad en GHz × núcleos. Se guarda como métrica `cpu_uso_ghz`, compatible con el backend y la migración de Excel. Si falta capacidad válida de alguna CPU, no se genera esta métrica. |
 | `ramTotalGb` | `1.3.6.1.4.1.232.11.2.13.1` (`cpqHoPhysicalMemorySize`, MB) | CPQHOST-MIB | INTEGER en MB → convertir a GB |
-| `ramUsoGb` | Derivado: `cpqHoPhysicalMemorySize` − `cpqHoPhysicalMemoryFree` (`1.3.6.1.4.1.232.11.2.13.2`, MB) | CPQHOST-MIB | Resta de dos OID, en MB → convertir a GB |
+| `ram_uso_gb` | Derivado: `cpqHoPhysicalMemorySize` − `cpqHoPhysicalMemoryFree` (`1.3.6.1.4.1.232.11.2.13.2`, MB) | CPQHOST-MIB | Resta de dos OID, en MB → convertir a GB. Se guarda con el nombre de métrica `ram_uso_gb`. |
 | `capacidadDiscosGb` | Suma de `cpqDaLogDrvSize` (`1.3.6.1.4.1.232.3.2.3.1.1.9`, MB) por cada unidad lógica del `cpqDaLogDrvTable` | CPQIDA-MIB | Sumatoria de la ETL sobre todas las filas, no un escalar único |
 | `ip_sistema_operativo` | `1.3.6.1.2.1.4.20.1.1` (`ipAdEntAddr`), tabla `ipAddrTable` | **IP-MIB (estándar, RFC 1213/4293)**. El único campo de IP en `CPQHOST-MIB` es `cpqHoClientIpAddress`, que es la IP de una *consola de gestión remota* registrada, no la IP propia del servidor — por eso se usa el `IP-MIB` estándar en su lugar. `ipAdEntIfIndex` (`...4.20.1.2`) referencia el índice de interfaz que porta esa IP; en los servidores rack (`hpe-dl380-01`/`hpe-dl360-01`) se usa el índice de `cpqNicIfPhysAdapterTable` (sección 4.6) ya que este agente no expone `IF-MIB` propio, y en los blades (`hpe-bl460c-01`/`hpe-bl460c-02`, sin tabla de NIC propia — ver sección "Servidores tipo BLADE") se deja `1` como referencia genérica. |
 | `version_so` | `1.3.6.1.4.1.232.11.2.2.2` (`cpqHoVersion`) | CPQHOST-MIB | DisplayString, "The version of the host OS." Complementario: `cpqHoName` (`...11.2.2.1`) da el nombre del SO y `cpqHosysDescr` (`...11.2.2.13`) da el equivalente a `sysDescr`. |
@@ -277,5 +277,6 @@ IP-MIB, sección 3) — con la salvedad de que, al no exponer este agente su pro
   `cpqDaPhyDrvSerialNum` (columna 51 de la tabla de discos),
   `cpqHeFltTolPowerSupplySerialNumber` (columna 11 de fuentes) y
   `cpqSeCPUSerialNumber` (columna 16 de CPU); valores vacíos se conservan como NULL.
-- `cpuTotalGhz` lo calcula el backend a partir de las CPUs. `cpuUsoGhz` y
-  `ramUsoGb` son mediciones históricas, no columnas de la tabla `servidor`.
+- `cpuTotalGhz` lo calcula el backend a partir de velocidad × núcleos de las CPUs.
+  `cpu_uso_ghz` y `ram_uso_gb` son mediciones históricas, no columnas de la tabla
+  `servidor`.
