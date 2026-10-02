@@ -1,11 +1,12 @@
-"""
-Extrae por SNMPv3 los OID del chasis blade HPE BladeSystem c7000, transcribiendo el mapeo de
-mibs/hpe-real/MAPEO-CHASIS.md: identidad, chasisSlots, ventiladores, fuentes de poder y módulos
-de interconexión de red con sus puertos.
+"""Extracción de chasis HPE c7000, sus slots y componentes."""
+from etl.oid_util import leer_perfil
 
-Funciones:
-- extraer_chasis(host: str, puerto: int, credenciales) -> dict: consulta todos los OID listados
-  en oids/chasis.py y devuelve el diccionario oid -> valor crudo.
-
-Dependencias: oids/chasis.py, snmp_cliente.py, extraccion/base.py.
-"""
+async def extraer_chasis(conexion):
+    return await leer_perfil(conexion, subarboles=(
+        "1.3.6.1.4.1.232.22.2.3",
+        "1.3.6.1.4.1.232.22.2.4",
+        "1.3.6.1.4.1.232.22.2.5",
+        "1.3.6.1.4.1.232.22.2.6",
+        "1.3.6.1.2.1.2.2.1",
+        "1.3.6.1.2.1.31.1.1.1",
+    ))

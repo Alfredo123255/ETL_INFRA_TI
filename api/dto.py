@@ -2,7 +2,7 @@
 import ipaddress
 import re
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, Field, field_validator
 
 def separar_destino(value: str) -> tuple[str, int]:
     if not value or value != value.strip():
@@ -80,16 +80,17 @@ class ConexionFallida(BaseModel):
     milisegundos: int
 
 
-class CrearActivoRequest(ProbarConexionRequest):
-    tipo_servidor: Literal["RACKEABLE", "BLADE"] = "RACKEABLE"
-    ubicacion: str | None = None
+class CrearActivoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    conexion_id: int = Field(gt=0, strict=True)
+    cluster_id: str = Field(min_length=1, max_length=100)
 
-    @field_validator("ubicacion")
+    @field_validator("cluster_id")
     @classmethod
-    def ubicacion_valida(cls, value):
-        if value is not None and (not value.strip() or any(ord(c) < 32 for c in value)):
-            raise ValueError("Ubicación inválida")
-        return value.strip() if value is not None else None
+    def cluster_valido(cls, value):
+        if not value.strip() or any(ord(c) < 32 for c in value):
+            raise ValueError("Identificador de clúster inválido")
+        return value.strip()
 
 
 class ActivoCreado(BaseModel):
@@ -98,8 +99,10 @@ class ActivoCreado(BaseModel):
     numero_serie: str
     hostname: str
     fabricante: str
-    tipo_activo: Literal["SERVIDOR"] = "SERVIDOR"
+    tipo_activo: Literal["SERVIDOR", "SWITCH", "STORAGE", "CHASIS"]
     modelo: str
     ubicacion: str
     componentes: dict[str, int]
     metricas_guardadas: int
+    conexion_id: int
+    cluster_id: str

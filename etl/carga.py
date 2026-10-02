@@ -4,22 +4,29 @@ import psycopg2
 from etl.db import conexion_bd
 from etl.errores import ActivoDuplicado, BaseNoDisponible, DatosIncompletos
 from etl.metricas import construir_metricas
-from etl.repositorio import crear_servidor, guardar_metricas
+from etl.repositorio import crear_activo, guardar_metricas
+from etl.registro_conexion import bloquear_y_validar, vincular
 
 
-def cargar_registro(config, ficha, ubicacion=None):
-    """Reutilizable desde API y ETL; no guarda credenciales ni programa monitoreo."""
+def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
+    """Crea el activo, componentes, métricas y vínculo de forma atómica."""
     # Convención de la simulación: datacenter / rack / posición.
-    datacenter = ubicacion or (ficha.get("ubicacion_snmp") or "").split("/", 1)[0].strip()
+    datacenter = referencias.datacenter if referencias else (ubicacion or (ficha.get("ubicacion_snmp") or "").split("/", 1)[0].strip())
     if not datacenter:
         raise DatosIncompletos("Falta la ubicación del datacenter en SNMP o en la solicitud.")
     ficha = {**ficha, "activo": {**ficha["activo"], "ubicacion": datacenter}}
+    if referencias:
+        ficha["activo"]["cluster"] = referencias.cluster_id
     # metrica_historica usa TIMESTAMP sin zona: se almacena UTC en todas las mediciones.
-    metricas = construir_metricas("SERVIDOR", ficha, datetime.now(timezone.utc).replace(tzinfo=None))
+    metricas = construir_metricas(ficha["activo"]["tipo_activo"], ficha, datetime.now(timezone.utc).replace(tzinfo=None))
     try:
         with conexion_bd(config) as conexion:
-            activo_id, cantidades = crear_servidor(conexion, ficha)
+            if referencias:
+                bloquear_y_validar(conexion, referencias)
+            activo_id, cantidades = crear_activo(conexion, ficha)
             guardar_metricas(conexion, activo_id, metricas)
+            if referencias:
+                vincular(conexion, referencias.conexion_id, activo_id)
     except psycopg2.Error as exc:
         if exc.pgcode == "23505":
             raise ActivoDuplicado("Ya existe un activo con esa serie o hostname.") from None
@@ -29,5 +36,6 @@ def cargar_registro(config, ficha, ubicacion=None):
     activo = ficha["activo"]
     return {"ok": True, "activo_id": activo_id, "numero_serie": activo["numero_serie"],
         "hostname": activo["hostname"], "fabricante": activo["fabricante"],
-        "tipo_activo": "SERVIDOR", "modelo": activo["modelo"], "ubicacion": datacenter,
-        "componentes": cantidades, "metricas_guardadas": len(metricas)}
+        "tipo_activo": activo["tipo_activo"], "modelo": activo["modelo"], "ubicacion": datacenter,
+        "componentes": cantidades, "metricas_guardadas": len(metricas),
+        **({"conexion_id": referencias.conexion_id, "cluster_id": referencias.cluster_id} if referencias else {})}

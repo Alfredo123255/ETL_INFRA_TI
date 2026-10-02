@@ -54,7 +54,7 @@ def mac(valor):
 
 
 def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABLE"):
-    if tipo not in ("RACKEABLE", "BLADE"):
+    if tipo not in ("AUTO", "RACKEABLE", "BLADE"):
         raise DatosIncompletos("Tipo de servidor inválido.")
     identidad = {campo: datos_crudos.get(oid) for campo, oid in OIDS_IDENTIDAD.items()}
     serie = texto(identidad["numero_serie"])
@@ -63,6 +63,8 @@ def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABL
     if not serie or not hostname or not modelo:
         raise DatosIncompletos("El equipo no proporciona serie, hostname o modelo para registrarlo.")
     blade = bool(re.search(r"\bBL\d", modelo, re.IGNORECASE))
+    if tipo == "AUTO":
+        tipo = "BLADE" if blade else "RACKEABLE"
     if blade and tipo != "BLADE":
         raise DatosIncompletos("El modelo detectado es blade; debe indicarse tipo BLADE.")
     tablas = {nombre: filas(datos_crudos, columnas) for nombre, columnas in TABLAS_HPE.items()}

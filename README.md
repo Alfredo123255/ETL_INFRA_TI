@@ -297,11 +297,10 @@ Sin pruebas omitidas. Los avisos corresponden a deprecaciones de dependencias
 (pysmi, cryptography y TestClient/httpx) y un aviso de caché de pytest del entorno de ejecución;
 no fueron fallos de conexión ni de las aserciones.
 
-## Extracción y preparación del registro inicial de servidores HPE
+## Registro inicial de servidores, switch Aruba, storage y chasis HPE
 
-Esta sección actualiza el estado de los módulos de servidor y reemplaza las
-descripciones anteriores de módulos pendientes: ya están implementados la
-extracción, normalización y registro inicial en PostgreSQL mediante
+Los cuatro tipos de activo simulados tienen extracción, normalización y registro
+inicial en PostgreSQL mediante
 `POST /api/etl/crear-activo`. La ruta de prueba de conexión conserva su contrato.
 
 - `etl/oids/servidor.py`: perfil HPE con escalares, columnas y enumeración de
@@ -312,10 +311,11 @@ extracción, normalización y registro inicial en PostgreSQL mediante
   ASN.1 por OID completo. La selección por fabricante no admite aún Huawei.
 - `etl/normalizacion/servidor.py`: produce `activo`, `servidor`, `componentes`,
   `mediciones` y el texto original de `ubicacion_snmp`, con nombres del esquema.
-- `etl/ciclo.py`: `preparar_registro_servidor` reutiliza la prueba de conexión,
-  detección, extracción y normalización, sin guardar datos ni credenciales.
+- `etl/ciclo.py`: `preparar_registro_activo` detecta el tipo por SNMP y selecciona
+  el perfil de extracción y normalización correspondiente.
 - `etl/db.py`, `etl/repositorio.py` y `etl/carga.py`: conexión, SQL parametrizado y
-  transacción única para registrar activo, servidor, componentes, puertos y métricas.
+  transacción única para registrar activo, subtipo, componentes, puertos, métricas
+  y el vínculo con la conexión SNMP.
 - `etl/metricas.py`: prepara las mediciones para `metrica_historica`.
 
 `cpuTotalGhz` queda a cargo del backend. `cpu_uso_ghz` y `ram_uso_gb` se devuelven
@@ -329,11 +329,10 @@ del activo es `numero_serie`. La fecha `ultima_actualizacion` se asigna antes de
 la futura carga, con fecha de Lima y tipo DATE. Los campos sin fuente quedan
 vacíos; la revisión de arquitectura de CPU no se interpreta como familia.
 
-La ubicación SNMP disponible usa textos como `DataCenter-1 / Rack A12 / U18-19`.
-Se toma el texto antes del primer `/` como nombre del datacenter; debe existir en
-`datacenters`. La solicitud puede enviar `ubicacion` para indicar explícitamente
-un datacenter existente. Los servidores BLADE deben indicarse como tales; sus
-componentes compartidos del chasis no se duplican ni se enlaza aún su slot.
+El datacenter del registro se obtiene del clúster existente indicado en la solicitud.
+El modelo distingue los servidores rack de los blade. Los componentes compartidos
+del chasis no se duplican. Si el chasis y el blade están en el mismo clúster,
+sus slots se vinculan por hostname al crear el segundo de los dos activos.
 
 ### Registro inicial por API
 
@@ -341,40 +340,57 @@ Configurar `DATABASE_URL` y, opcionalmente, `DB_TIMEOUT` en `.env`. La prueba de
 conexión no requiere estas variables. Instalar las dependencias actualizadas de
 `requirements.txt`, incluido el controlador `psycopg2-binary`.
 
-La base debe tener aplicado el esquema R6 por el módulo propietario del esquema
-y estar poblado el catálogo de datacenters. El ETL no crea ni modifica tablas.
+La base debe tener aplicado el esquema R6 y la migración
+`migrations/001_monitoreo_clave_privacidad.sql`; el ETL no modifica el esquema
+automáticamente. Debe existir el datacenter y el clúster antes de crear el activo.
 
-Enviar `X-API-Key` y este cuerpo a `POST /api/etl/crear-activo` (reemplazar los
-marcadores de claves por los valores del agente, sin versionarlos):
+Enviar `X-API-Key` y este cuerpo a `POST /api/etl/crear-activo`:
 
 ```json
 {
-  "ip_gestion": "127.0.0.11:16100",
-  "usuario": "monitor_dl380",
-  "clave": "<clave de autenticación>",
-  "clave_privacidad": "<clave de privacidad>",
-  "tipo_servidor": "RACKEABLE"
+  "conexion_id": 1,
+  "cluster_id": "CLUSTER-LAB-LOCAL"
 }
 ```
 
-`tipo_servidor` admite RACKEABLE (predeterminado) o BLADE. `ubicacion` es opcional.
-El perfil implementado es HPE ProLiant; otros fabricantes o tipos se rechazan.
+`conexion_id` es el ID entero positivo de una fila existente de `monitoreo_snmp`.
+`cluster_id` corresponde a `clusters.nombre`, la clave primaria textual del esquema;
+no existe un ID numérico de clúster. El tipo de equipo se detecta por SNMP; para servidores HPE, RACKEABLE o BLADE
+se infiere del modelo. No se reciben IP, usuario, contraseña ni ubicación en esta petición.
+El ETL obtiene IP y credenciales de la conexión. `clave` se usa para autenticación
+SNMPv3; `clave_privacidad` para privacidad. Cuando la segunda es NULL se utiliza
+`clave` para ambas. El datacenter proviene de `clusters.datacenter`.
 
-El proceso crea el modelo en `modelos` si no existe, inserta `activo` y `servidor`,
-sus CPU, RAM, discos, controladoras RAID, tarjetas, puertos, ventiladores y fuentes
-disponibles, y las métricas iniciales de uso de CPU/RAM, temperatura y consumo.
+Se admiten los perfiles simulados HPE ProLiant (rack y blade), ArubaOS-CX,
+HPE StorageWorks con arreglo Fibre Channel y HPE BladeSystem c7000. Equipos
+sin un perfil compatible se rechazan.
+
+El proceso crea el modelo en `modelos` si no existe, inserta `activo` y su
+subtipo (`servidor`, `switch`, `storage` o `chasis_blade`), además de los
+componentes y métricas disponibles según el perfil. El switch guarda 52 puertos
+físicos; los storage guardan discos del arreglo FC y componentes del host
+administrador; el chasis guarda slots, ventiladores, fuentes e interconexiones.
 Si falla cualquier escritura, se deshace toda la transacción, incluido un modelo
 nuevo. El registro inicial no actualiza activos existentes ni genera duplicados.
 
-No se registra aún una fila en `monitoreo_snmp`, no se almacenan las credenciales
-de la solicitud y no se configura frecuencia. Tampoco se genera un evento de
-cambio en `historico_estado` por esta primera inserción.
+Dentro de la misma transacción se asigna `activo.cluster` y se actualiza la conexión
+existente: `monitoreo_snmp.activo_id`, estado `Activo` y fecha de última actualización.
+No se crea una segunda conexión ni se cambia su frecuencia. Antes de guardar se
+bloquean y revalidan conexión y clúster; una vinculación previa o un cambio concurrente
+impiden la creación. Si falla el vínculo, también se revierten activo, componentes y
+métricas. No se genera un evento en `historico_estado` por esta primera inserción.
+Los activos creados con el contrato anterior no se vinculan retroactivamente.
+Los campos administrativos sin OID, como `switch.tipo_red`,
+`switch.modo_operacion` y `storage.iops` nominal, quedan NULL para que los
+complete el front. El valor de capacidad usada del storage depende del bloque
+Nimble prestado en la simulación; puede quedar NULL en hardware que no lo exponga.
 
 Respuestas:
 
-- 201: activo creado; devuelve `activo_id`, identidad, ubicación y cantidades guardadas.
+- 201: activo creado; devuelve `activo_id`, `conexion_id`, `cluster_id`, identidad, ubicación y cantidades guardadas.
 - 401: clave de API ausente o incorrecta.
-- 409: serie o hostname ya registrado.
+- 404: conexión o clúster inexistente.
+- 409: serie/hostname duplicado, conexión ya vinculada o referencias modificadas durante la consulta.
 - 422: solicitud, ficha o datacenter inválidos, o perfil no implementado.
 - 502/504: fallo de comunicación SNMP o tiempo de espera agotado.
 - 503: PostgreSQL no configurado, no disponible o fallo de persistencia.
@@ -388,8 +404,8 @@ Verificación de esta etapa:
 python -m pytest -q tests/unitarios tests/integracion/test_servidor.py
 ```
 
-Las dos pruebas de integración de servidor levantan simuladores temporales en
+Las pruebas de integración de servidor levantan simuladores temporales en
 puertos locales disponibles y los cierran al terminar. Requieren `snmpsim`.
 Las pruebas de persistencia usan conexiones de prueba controladas para verificar
-SQL parametrizado, relaciones, commit y rollback. La escritura contra PostgreSQL
-real no se verificó en este entorno, que no tiene una conexión de base configurada.
+SQL parametrizado, relaciones, commit y rollback. La creación y vinculación atómicas se verificaron además contra PostgreSQL local
+en un esquema aislado, incluyendo rollback ante fallo del vínculo y rechazo de repetición.

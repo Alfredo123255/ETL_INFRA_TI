@@ -12,10 +12,11 @@ from api.dto import (ConexionExitosa, ConexionFallida, ProbarConexionRequest,
 from api.seguridad import resolver_destino, verificar_api_key
 from etl.config import cargar_configuracion
 from etl.snmp_cliente import fallo, probar_conexion, ConexionSNMP, MESSAGES
-from etl.ciclo import preparar_registro_servidor
+from etl.ciclo import preparar_registro_activo
 from etl.carga import cargar_registro
+from etl.registro_conexion import obtener_referencias
 from etl.errores import (ErrorExtraccion, PerfilNoSoportado, DatosIncompletos,
-                        ActivoDuplicado, BaseNoDisponible)
+                        ActivoDuplicado, BaseNoDisponible, ReferenciaNoEncontrada)
 
 logger = logging.getLogger("etl.conexion")
 
@@ -34,7 +35,7 @@ def crear_app(config=None):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
-        fields = set(CrearActivoRequest.model_fields)
+        fields = set(CrearActivoRequest.model_fields) | set(ProbarConexionRequest.model_fields)
         detail = []
         for error in exc.errors():
             name = next((part for part in error["loc"] if part in fields), "cuerpo")
@@ -68,15 +69,19 @@ def crear_app(config=None):
     async def crear_activo(body: CrearActivoRequest, request: Request):
         if config.database_url is None:
             raise HTTPException(503, "Falta configurar PostgreSQL para registrar activos.")
-        host, puerto = separar_destino(body.ip_gestion)
         async with request.app.state.semaforo:
             try:
+                referencias = await run_in_threadpool(obtener_referencias, config, body.conexion_id, body.cluster_id)
+                try:
+                    host, puerto = separar_destino(referencias.ip_gestion)
+                except ValueError:
+                    raise DatosIncompletos("El destino guardado en la conexión es inválido.") from None
                 address = await resolver_destino(host, puerto, config.redes_permitidas, config.snmp_timeout)
-                conexion = ConexionSNMP(address, puerto, body.usuario, body.clave, body.clave_privacidad,
+                conexion = ConexionSNMP(address, puerto, referencias.usuario, referencias.clave, referencias.clave_privacidad,
                     config.snmp_context_name, config.snmp_timeout, config.snmp_retries)
-                ficha = await preparar_registro_servidor(conexion, config,
-                    tipo=body.tipo_servidor, ip_gestion=body.ip_gestion)
-                return await run_in_threadpool(cargar_registro, config, ficha, body.ubicacion)
+                ficha = await preparar_registro_activo(conexion, config,
+                    ip_gestion=referencias.ip_gestion)
+                return await run_in_threadpool(cargar_registro, config, ficha, referencias=referencias)
             except HTTPException:
                 raise
             except ErrorExtraccion as exc:
@@ -90,6 +95,8 @@ def crear_app(config=None):
                 raise HTTPException(422, str(exc)) from None
             except ActivoDuplicado as exc:
                 raise HTTPException(409, str(exc)) from None
+            except ReferenciaNoEncontrada as exc:
+                raise HTTPException(404, str(exc)) from None
             except BaseNoDisponible as exc:
                 raise HTTPException(503, str(exc)) from None
 

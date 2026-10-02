@@ -16,3 +16,6 @@ class BaseNoDisponible(Exception):
 
 class ActivoDuplicado(Exception):
     pass
+
+class ReferenciaNoEncontrada(Exception):
+    pass

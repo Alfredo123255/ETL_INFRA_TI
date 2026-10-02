@@ -4,8 +4,13 @@ from etl.errores import DatosIncompletos
 COLUMNAS = {
     "activo": ("numero_serie", "hostname", "fabricante", "modelo", "generacion", "ubicacion",
         "ip_gestion", "tipo_activo", "estado_operativo", "version_firmware",
-        "ultima_actualizacion", "temperatura", "consumo_electrico_w"),
+        "ultima_actualizacion", "temperatura", "consumo_electrico_w", "cluster"),
     "servidor": ("id", "ip_sistema_operativo", "version_so", "tipo"),
+    "switch": ("id", "tipo_red", "cantidad_puertos", "cantidad_puertos_ocupados", "modo_operacion"),
+    "storage": ("id", "protocolo_comunicacion", "capacidad_total_tb", "capacidad_usada_tb", "iops"),
+    "chasis_blade": ("id", "cantidad_slots"),
+    "chasis_slot": ("chasis_id", "numero_slot", "estado", "hostname_servidor"),
+    "puerto_switch": ("switch_id", "numero_puerto", "velocidad", "estado"),
     "cpu": ("activo_id", "numero_serial", "familia", "marca", "modelo", "velocidad_ghz",
         "cantidad_nucleos", "cantidad_hilos", "cache_l1_mb", "cache_l2_mb", "cache_l3_mb", "estado"),
     "ram": ("activo_id", "numero_serial", "marca", "modelo", "generacion", "velocidad_mhz", "capacidad_gb", "estado"),
@@ -31,9 +36,12 @@ def _insertar(cursor, tabla, datos):
     return cursor.fetchone()[0]
 
 
-def crear_servidor(conexion, ficha):
-    """Inserta activo, subtipo, componentes y puertos dentro de la transacción del llamador."""
+def crear_activo(conexion, ficha):
+    """Inserta activo, subtipo y componentes en la transacción del llamador."""
     activo = ficha["activo"]
+    subtipo={"SERVIDOR":"servidor","SWITCH":"switch","STORAGE":"storage","CHASIS":"chasis_blade"}.get(activo["tipo_activo"])
+    if subtipo is None or subtipo not in ficha:
+        raise DatosIncompletos("La ficha no corresponde a un tipo de activo conocido.")
     with conexion.cursor() as cursor:
         cursor.execute("SELECT nombre FROM datacenters WHERE nombre = %s", (activo["ubicacion"],))
         if cursor.fetchone() is None:
@@ -41,22 +49,66 @@ def crear_servidor(conexion, ficha):
         cursor.execute("INSERT INTO modelos (nombre_modelo) VALUES (%s) ON CONFLICT (nombre_modelo) DO NOTHING",
                        (activo["modelo"],))
         activo_id = _insertar(cursor, "activo", activo)
-        _insertar(cursor, "servidor", {"id": activo_id, **ficha["servidor"]})
+        _insertar(cursor, subtipo, {"id": activo_id, **ficha[subtipo]})
         cantidades = {}
+        compatibles={"SERVIDOR":("cpu","ram","disco","tarjeta_red","fuente_poder","ventilador","controladora_raid"),
+            "STORAGE":("cpu","ram","disco","tarjeta_red","fuente_poder","ventilador","controladora_raid"),
+            "SWITCH":("puerto_switch","cpu","ram","fuente_poder","ventilador"),
+            "CHASIS":("chasis_slot","tarjeta_red","fuente_poder","ventilador")}
         for tabla, filas in ficha["componentes"].items():
-            if tabla not in ("cpu", "ram", "disco", "tarjeta_red", "fuente_poder", "ventilador", "controladora_raid"):
-                raise DatosIncompletos("Tipo de componente incompatible con el esquema.")
+            if tabla not in compatibles[activo["tipo_activo"]]:
+                raise DatosIncompletos("Tipo de componente incompatible con el activo.")
             cantidades[tabla] = len(filas)
             for fila in filas:
                 puertos = fila.get("puertos", []) if tabla == "tarjeta_red" else []
                 datos = {campo: valor for campo, valor in fila.items() if campo != "puertos"}
-                componente_id = _insertar(cursor, tabla, {**datos, "activo_id": activo_id})
+                relacion = {"puerto_switch":"switch_id","chasis_slot":"chasis_id"}.get(tabla,"activo_id")
+                componente_id = _insertar(cursor, tabla, {**datos, relacion: activo_id})
                 if tabla == "tarjeta_red":
                     cantidades["puerto_tarjeta_red"] = cantidades.get("puerto_tarjeta_red", 0) + len(puertos)
                     for puerto in puertos:
                         _insertar(cursor, "puerto_tarjeta_red", {**puerto, "tarjeta_red_id": componente_id})
         cantidades.setdefault("puerto_tarjeta_red", 0)
+        if activo["tipo_activo"] in ("SERVIDOR", "CHASIS"):
+            vincular_slot_blade(cursor, activo_id, activo)
     return activo_id, cantidades
+
+
+def vincular_slot_blade(cursor, activo_id, activo):
+    """Vincula un blade y su slot si el otro activo ya existe en el mismo clúster."""
+    if activo["tipo_activo"] == "SERVIDOR":
+        cursor.execute("SELECT tipo FROM servidor WHERE id=%s", (activo_id,))
+        if cursor.fetchone()[0] != "BLADE":
+            return
+        cursor.execute("""SELECT s.id, s.servidor_id FROM chasis_slot s
+            JOIN activo c ON c.id=s.chasis_id
+            WHERE s.hostname_servidor=%s AND c.cluster=%s AND c.ubicacion=%s
+            FOR UPDATE OF s""", (activo["hostname"],activo.get("cluster"),activo["ubicacion"]))
+        matches=cursor.fetchall()
+        if len(matches)>1:
+            raise DatosIncompletos("El servidor blade coincide con varios slots de chasis.")
+        if matches:
+            slot_id, asignado=matches[0]
+            if asignado not in (None,activo_id):
+                raise DatosIncompletos("El slot ya está asignado a otro servidor.")
+            cursor.execute("UPDATE servidor SET id_chasis_slot=%s WHERE id=%s", (slot_id,activo_id))
+            cursor.execute("UPDATE chasis_slot SET servidor_id=%s WHERE id=%s", (activo_id,slot_id))
+    elif activo["tipo_activo"] == "CHASIS":
+        cursor.execute("""SELECT s.id, b.id FROM chasis_slot s
+            JOIN activo b ON b.hostname=s.hostname_servidor AND b.tipo_activo='SERVIDOR'
+            JOIN servidor v ON v.id=b.id AND v.tipo='BLADE'
+            WHERE s.chasis_id=%s AND b.cluster=%s AND b.ubicacion=%s
+            FOR UPDATE OF s, b""", (activo_id,activo.get("cluster"),activo["ubicacion"]))
+        for slot_id,servidor_id in cursor.fetchall():
+            cursor.execute("UPDATE servidor SET id_chasis_slot=%s WHERE id=%s AND id_chasis_slot IS NULL",
+                (slot_id,servidor_id))
+            if cursor.rowcount!=1:
+                raise DatosIncompletos("El blade ya está asignado a otro slot.")
+            cursor.execute("UPDATE chasis_slot SET servidor_id=%s WHERE id=%s",(servidor_id,slot_id))
+
+
+def crear_servidor(conexion, ficha):
+    return crear_activo(conexion, ficha)
 
 
 def guardar_metricas(conexion, activo_id, metricas):

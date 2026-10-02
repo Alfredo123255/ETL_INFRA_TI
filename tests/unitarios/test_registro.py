@@ -9,6 +9,7 @@ from pydantic import SecretStr
 import api.main as api
 import etl.db as db
 import etl.carga as carga
+from etl.registro_conexion import ReferenciasRegistro
 from etl.config import Configuracion
 from etl.errores import ActivoDuplicado, BaseNoDisponible, DatosIncompletos, ErrorExtraccion
 from etl.normalizacion.servidor import normalizar_servidor_hpe
@@ -16,15 +17,15 @@ from tests.unitarios.test_servidor import FECHA, registros
 
 CFG = Configuracion(SecretStr("api-test"), database_url=SecretStr("postgresql://test:test@localhost/inventario"))
 HEADERS = {"X-API-Key": "api-test"}
-BODY = {"ip_gestion": "127.0.0.1:16100", "usuario": "monitor",
-        "clave": "secreto-auth", "clave_privacidad": "secreto-priv"}
+BODY = {"conexion_id": 1, "cluster_id": "CLUSTER-LAB-LOCAL"}
+REF = ReferenciasRegistro(1, "CLUSTER-LAB-LOCAL", "DataCenter-1", "127.0.0.1:16100", "monitor", SecretStr("secreto-auth"))
 PATH = "/api/etl/crear-activo"
 
 
 @pytest.fixture
 def ficha():
     resultado = normalizar_servidor_hpe(registros("hpe-dl380-01"), fecha_actualizacion=FECHA)
-    resultado["activo"]["ip_gestion"] = BODY["ip_gestion"]
+    resultado["activo"]["ip_gestion"] = REF.ip_gestion
     return resultado
 
 
@@ -140,9 +141,10 @@ def test_conexion_no_expone_password(monkeypatch):
 
 @pytest.fixture
 def preparar_api(monkeypatch, ficha):
+    monkeypatch.setattr(api, "obtener_referencias", MagicMock(return_value=REF))
     query = AsyncMock(return_value=ficha)
-    monkeypatch.setattr(api, "preparar_registro_servidor", query)
-    resultado = {"ok": True, "activo_id": 10, "numero_serie": "CZ38010ABC",
+    monkeypatch.setattr(api, "preparar_registro_activo", query)
+    resultado = {"ok": True, "activo_id": 10, "conexion_id": 1, "cluster_id": REF.cluster_id, "numero_serie": "CZ38010ABC",
         "hostname": "hpe-dl380-01", "fabricante": "HPE", "tipo_activo": "SERVIDOR",
         "modelo": "ProLiant DL380 Gen10", "ubicacion": "DataCenter-1",
         "componentes": {"cpu": 2}, "metricas_guardadas": 4}
@@ -157,14 +159,16 @@ def test_api_crea_y_reutiliza_etl(preparar_api):
         respuesta = client.post(PATH, json=BODY, headers=HEADERS)
     assert respuesta.status_code == 201
     assert respuesta.json()["activo_id"] == 10
+    assert set(respuesta.json()) >= {"conexion_id", "cluster_id"}
     query.assert_awaited_once()
     guardar.assert_called_once()
+    assert guardar.call_args.kwargs["referencias"] == REF
     conexion = query.call_args.args[0]
     assert conexion.host == "127.0.0.1" and conexion.puerto == 16100
     assert "secreto-auth" not in respuesta.text and "secreto-priv" not in respuesta.text
 
 
-@pytest.mark.parametrize("cambios", [{"tipo_servidor": "INVALIDO"}, {"ubicacion": " "}, {"clave": ""}])
+@pytest.mark.parametrize("cambios", [{"tipo_servidor": "RACKEABLE"}, {"cluster_id": " "}, {"conexion_id": 0}, {"conexion_id": True}, {"clave": "no-admitida"}])
 def test_validacion_sin_extraccion(preparar_api, cambios):
     with TestClient(api.crear_app(CFG)) as client:
         respuesta = client.post(PATH, json=BODY | cambios, headers=HEADERS)
@@ -204,3 +208,45 @@ def test_api_fallos_persistencia(preparar_api, error, status):
     with TestClient(api.crear_app(CFG)) as client:
         respuesta = client.post(PATH, json=BODY, headers=HEADERS)
     assert respuesta.status_code == status
+
+@pytest.mark.parametrize("error,status", [
+    (__import__('etl.errores', fromlist=['ReferenciaNoEncontrada']).ReferenciaNoEncontrada("Referencia inexistente."),404),
+    (ActivoDuplicado("Conexión vinculada."),409)])
+def test_referencias_invalidas_no_consultan_snmp(preparar_api, monkeypatch, error, status):
+    monkeypatch.setattr(api, 'obtener_referencias', MagicMock(side_effect=error))
+    with TestClient(api.crear_app(CFG)) as client:
+        response = client.post(PATH, json=BODY, headers=HEADERS)
+    assert response.status_code == status
+    preparar_api[0].assert_not_awaited()
+    preparar_api[1].assert_not_called()
+
+
+def test_vinculacion_fallida_revierte_registro(ficha, conexion, monkeypatch):
+    monkeypatch.setattr(carga, 'bloquear_y_validar', MagicMock())
+    monkeypatch.setattr(carga, 'vincular', MagicMock(side_effect=ActivoDuplicado('Conflicto')))
+    with pytest.raises(ActivoDuplicado):
+        carga.cargar_registro(CFG, ficha, referencias=REF)
+    conexion[0].rollback.assert_called_once()
+    conexion[0].commit.assert_not_called()
+    assert conexion[1].executemany.called
+
+
+def test_cambio_concurrente_impide_registro(monkeypatch):
+    import etl.registro_conexion as r
+    monkeypatch.setattr(r, 'leer_referencias', MagicMock(return_value=replace(REF, datacenter='otro')))
+    with pytest.raises(ActivoDuplicado):
+        r.bloquear_y_validar(MagicMock(), REF)
+
+
+@pytest.mark.parametrize('rows,error', [
+    ([None], 'ReferenciaNoEncontrada'),
+    ([('127.0.0.1','user','secret',10,None)], 'ActivoDuplicado'),
+    ([('127.0.0.1','user','secret',None,None),None], 'ReferenciaNoEncontrada'),
+    ([('127.0.0.1','user','secret',None,None),(None,)], 'DatosIncompletos')])
+def test_referencias_incompletas(rows, error):
+    import etl.errores as errores
+    from etl.registro_conexion import leer_referencias
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = rows
+    with pytest.raises(getattr(errores,error)):
+        leer_referencias(cursor,1,'cluster')

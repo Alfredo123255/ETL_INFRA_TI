@@ -222,3 +222,10 @@ async def test_registro_prepara_ficha_sin_credenciales(monkeypatch):
     assert ficha["activo"]["ip_gestion"] == "equipo.local:161"
     assert isinstance(ficha["activo"]["ultima_actualizacion"], date)
     assert "auth-secreta" not in str(ficha)
+
+
+def test_tipo_servidor_se_infiere_del_modelo():
+    rack = normalizar_servidor_hpe(registros("hpe-dl380-01"), fecha_actualizacion=FECHA, tipo="AUTO")
+    blade = normalizar_servidor_hpe(registros("hpe-bl460c-01"), fecha_actualizacion=FECHA, tipo="AUTO")
+    assert rack["servidor"]["tipo"] == "RACKEABLE"
+    assert blade["servidor"]["tipo"] == "BLADE"
