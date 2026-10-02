@@ -1,60 +1,126 @@
-# Entorno SNMP simulado — ETL (Objetivo 2)
+# ETL de infraestructura TI — entorno SNMP simulado
 
-Entorno para desarrollar y probar el componente ETL de extracción del Objetivo 2 de la tesis, sin depender de acceso real a switches HPE o Huawei. Los agentes SNMP se simulan localmente a partir de las MIB reales de cada fabricante, así que las OID y los tipos de dato que recibe el ETL son los mismos que recibiría de un equipo real, y el código de extracción no cambia el día que sí haya acceso a los equipos.
+Este repositorio consulta ocho agentes SNMPv3 simulados y crea activos de tipo servidor HPE,
+chasis HPE, storage Fibre Channel y switch ArubaOS-CX en PostgreSQL. La API del ETL corre
+separada del backend Spring Boot.
 
-## Estructura
+## Arranque local completo (Windows)
 
+Usa PowerShell en `C:\INGESOFT\ETL_INFRA_TI`. Requiere Python con las dependencias de
+`requirements.txt`, PostgreSQL, Java 21 para el backend y Node.js si también quieres el frontend.
+Cada bloque de arranque se ejecuta en una terminal distinta.
+
+1. **Preparar Python y PostgreSQL** (solo la primera vez):
+
+   ```powershell
+   cd C:\INGESOFT\ETL_INFRA_TI
+   python -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   Get-Service 'postgresql*'
+   # Solo si el servicio está detenido; puede requerir PowerShell como administrador:
+   if ((Get-Service postgresql-x64-17).Status -ne "Running") { Start-Service postgresql-x64-17 }
+   psql -h 127.0.0.1 -U postgres -d postgres -f .\migrations\001_monitoreo_clave_privacidad.sql
+   ```
+
+   El esquema de activos y las tablas `monitoreo_snmp`, `clusters` y `datacenters`
+   deben existir antes de ejecutar esa migración. Si `psql` no está en `PATH`, usa
+   `C:\Program Files\PostgreSQL\17\bin\psql.exe`. La migración agrega
+   `clave_privacidad` para agentes con claves SNMPv3 diferentes; se puede ejecutar
+   de nuevo sin duplicar la columna.
+
+2. **Iniciar los ocho agentes SNMP**:
+
+   ```powershell
+   cd C:\INGESOFT\ETL_INFRA_TI
+   .\.venv\Scripts\python.exe -B .\scripts\iniciar_agentes.py
+   .\.venv\Scripts\python.exe -B .\data\verify_agents.py
+   ```
+
+   El iniciador incluye DL380, DL360, dos blades, chasis c7000, switch Aruba y dos
+   storage. Si un puerto ya está ocupado, no lanza un segundo proceso; la
+   verificación confirma qué agente responde. Los procesos quedan en segundo
+   plano y sus registros están en `logs/agentes/`. Las credenciales y destinos
+   simulados están en `data/<agente>/README.md`.
+
+3. **Configurar y arrancar la API ETL**:
+
+   ```powershell
+   cd C:\INGESOFT\ETL_INFRA_TI
+   Copy-Item .env.example .env
+   notepad .env
+   .\.venv\Scripts\python.exe -B -m api.main
+   ```
+
+   En `.env`, configura al menos estos valores con tu clave API y la contraseña
+   de tu PostgreSQL local:
+
+   ```dotenv
+   ETL_API_KEY=<tu-clave-api>
+   DATABASE_URL=postgresql://postgres:<tu-clave-postgres>@127.0.0.1:5432/postgres
+   SNMP_CONTEXT_NAME=public
+   SNMP_REDES_PERMITIDAS=127.0.0.0/8,::1/128
+   API_HOST=127.0.0.1
+   API_PORT=8001
+   API_DOCS=1
+   ```
+
+   Comprueba `http://127.0.0.1:8001/docs`. Para crear un activo envía
+   `X-API-Key` y `Content-Type: application/json` a
+   `POST http://127.0.0.1:8001/api/etl/crear-activo`:
+
+   ```json
+   {"conexion_id": 7, "cluster_id": "CLUSTER-LAB-LOCAL"}
+   ```
+
+   Los IDs del ejemplo corresponden a esta base local: conexión 7 = switch Aruba.
+   En otra base, consulta los IDs de `monitoreo_snmp` y el nombre de `clusters`.
+   La creación detecta el tipo por SNMP, guarda los componentes y vincula el ID
+   del activo a la conexión. La conexión debe tener IP, usuario y claves válidas.
+
+4. **Iniciar el backend Spring Boot**, en otra terminal:
+
+   ```powershell
+   cd C:\INGESOFT\Backend-SI-INFRA-TI\backend-infra-ti
+   .\mvnw.cmd spring-boot:run '-Dspring-boot.run.arguments=--server.port=8080'
+   ```
+
+   Comprueba `http://127.0.0.1:8080/api/servidores`. Este backend usa todavía
+   los repositorios Excel de su proyecto; arrancarlo no hace que muestre los
+   activos que el ETL acaba de guardar en PostgreSQL.
+
+5. **Opcional: iniciar el frontend**, en otra terminal:
+
+   ```powershell
+   cd C:\INGESOFT\Frontend-SI-INFRA-TI\Frontend-SI-INFRA-TI
+   npm install
+   npm run dev -- --host 127.0.0.1 --port 4200
+   ```
+
+   Abre `http://127.0.0.1:4200/`. Si las dependencias ya están instaladas,
+   omite `npm install`.
+
+En esta computadora también existe
+`C:\Users\jenny\OneDrive\Escritorio\Tesis\iniciar_sistema_local.py`, que arranca
+API, backend y frontend si sus puertos están libres y genera una colección Postman.
+Para usarlo en esta instalación, después de iniciar los agentes, ejecuta:
+
+```powershell
+cd C:\Users\jenny\OneDrive\Escritorio\Tesis
+$pgSecret = Read-Host "Contraseña de PostgreSQL" -AsSecureString
+$env:PGPASSWORD = [System.Net.NetworkCredential]::new("", $pgSecret).Password
+C:\INGESOFT\ETL_INFRA_TI\.venv\Scripts\python.exe -B .\iniciar_sistema_local.py
+Remove-Item Env:PGPASSWORD
 ```
-data/
-  hpe-sw01/public.snmprec      # datos simulados del switch HPE
-  huawei-sw01/public.snmprec   # datos simulados del switch Huawei
-mibs/
-  hp/                          # MIB de HPE (tomadas de LibreNMS)
-  huawei/                      # MIB de Huawei (tomadas de LibreNMS)
-src/
-  extract.py                   # script de extracción (pysnmp)
-requirements.txt
-```
 
-## Librerías
+La colección queda en
+`C:\Users\jenny\OneDrive\Escritorio\Tesis\outputs\sistema_local\Prueba_local.postman_collection.json`.
 
-| Librería | Uso |
-|---|---|
-| `snmpsim` | Simula los agentes SNMP (switch HPE y switch Huawei) a partir de los `.snmprec`. Corre como proceso independiente vía `snmpsim-command-responder`. |
-| `pysmi` | Dependencia de `snmpsim`/`pysnmp`, se instala sola. Traduce el texto de las MIB (`HUAWEI-DEVICE-MIB`, `HP-ICF-OID`, etc.) a algo que Python puede leer; por eso `--mib-source` apunta a esta librería, no a `snmpsim` directamente. |
-| `pysnmp` | Cliente SNMP. Arma las consultas GET/GETBULK contra los agentes (simulados o reales), autenticando por SNMPv3 con `UsmUserData`/`ContextData`. |
-| `pycryptodome` | Dependencia de `pysnmp`, se instala sola. Hace el cifrado/autenticación SHA y AES que exige SNMPv3. |
+## Datos simulados
 
-Pendientes para las siguientes etapas del ETL (normalización y carga):
-
-| Librería | Uso previsto |
-|---|---|
-| `pandas` / `numpy` | Transformar los pares OID/valor crudos hacia el modelo de datos unificado. |
-| `psycopg2` o `SQLAlchemy` | Cargar los datos ya normalizados en PostgreSQL. |
-
-## Cómo correrlo
-
-1. Instalar dependencias:
-   ```
-   pip install -r requirements.txt
-   ```
-
-2. Levantar el agente simulado (ejemplo con el switch HPE; para Huawei es el mismo comando cambiando `--data-dir`, el puerto y las credenciales):
-   ```
-   snmpsim-command-responder --data-dir=./data/hpe-sw01 --agent-udpv4-endpoint=127.0.0.1:1161 --v3-user=hpeadmin --v3-auth-key=hpeAuth2026 --v3-priv-key=hpePriv2026 --v3-auth-proto=SHA --v3-priv-proto=AES
-   ```
-
-3. En otra terminal, correr la extracción:
-   ```
-   python src/extract.py
-   ```
-
-## Regenerar los datos simulados
-
-Si se necesita otra MIB o hay que rehacer un `.snmprec`:
-```
-snmpsim-record-mibs --mib-module=HUAWEI-DEVICE-MIB --output-file=./data/huawei-sw01/public.snmprec --mib-source=./mibs/huawei --mib-source=https://mibs.pysnmp.com/asn1/@mib@
-```
+Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los ocho
+modelos. Los MIB y los documentos de mapeo de OID están en `mibs/`. Para cambiar
+una simulación, edita su archivo de datos y ejecuta las dos verificaciones de la
+sección siguiente antes de usarla desde la API.
 
 ## Validar un `.snmprec` antes de hacer commit
 
@@ -70,43 +136,18 @@ SNMP completo contra cada agente ya levantado y lo compara contra su `.snmprec`.
 
 ## Estructura del ETL y la API
 
-Por ahora estas carpetas solo tienen la estructura de archivos (cada `.py` tiene únicamente un
-docstring de módulo que describe su responsabilidad, las funciones/clases previstas y de qué
-otros módulos depende; todavía no hay lógica implementada). El esquema de PostgreSQL pertenece a
-otro módulo del sistema y es transversal: este repositorio no lo contiene ni lo crea, y el ETL
-nunca hace DDL (crear/alterar/eliminar tablas), solo lee y escribe filas.
-
-```
-etl/
-  __init__.py               # paquete del ETL
-  config.py                 # carga la configuracion desde .env
-  db.py                     # conexion a PostgreSQL (psycopg2, sin ORM); nunca toca el esquema
-  repositorio.py            # consultas SQL parametrizadas (lectura de monitoreo_snmp, escritura de fichas/metricas)
-  cifrado.py                # cifra/descifra las credenciales SNMPv3 guardadas en la base
-  snmp_cliente.py           # GET/GETBULK/walk SNMPv3 con pysnmp
-  detector.py                # resuelve que extractor/normalizador usar segun el tipo de activo
-  metricas.py                # arma las filas de metrica historica a partir de la ficha normalizada
-  carga.py                   # persiste ficha y metricas en la base via repositorio.py
-  ciclo.py                   # orquesta extraer -> normalizar -> cargar para una conexion
-  programador.py             # decide cuando correr cada extraccion (libreria schedule)
-  extraccion/                # un modulo por tipo de activo: consulta los OID por SNMPv3
-  normalizacion/             # un modulo por tipo de activo: pasa lo crudo a la estructura del esquema (pandas)
-  oids/                      # constantes con los OID numericos transcritos de mibs/*.md, por tipo de activo
-api/
-  __init__.py                # paquete de la API
-  main.py                     # FastAPI: probar conexion, extraer ahora, salud (no reemplaza al backend Spring Boot)
-  dto.py                  # modelos pydantic de request/response
-  seguridad.py                 # valida la cabecera X-API-Key
-requirements.txt              # dependencias de Python del ETL y la API
-.env.example                  # variables de entorno de ejemplo (nunca valores reales)
-```
+`etl/extraccion/` contiene los perfiles SNMP de servidor, switch, storage y
+chasis; `etl/normalizacion/` convierte sus valores a las tablas del esquema.
+`etl/ciclo.py` detecta el tipo de equipo, `etl/repositorio.py` guarda el subtipo
+y componentes, y `etl/carga.py` vincula el activo con `monitoreo_snmp` dentro
+de una transacción. `api/main.py` expone las rutas de prueba y creación.
 
 ## API de validación de conexión
 
-Esta sección describe la implementación actual y reemplaza, para estos módulos, la descripción
-de estructura prevista de la sección anterior. Solo se implementa
-`POST /api/etl/probar-conexion`: no hay base de datos, ORM, programador, guardado de credenciales
-ni alta de activos. Los demás módulos del ETL siguen como estaban.
+`POST /api/etl/probar-conexion` prueba SNMPv3 sin crear un activo. Recibe IP,
+usuario y clave de autenticación, más una clave de privacidad opcional.
+`POST /api/etl/crear-activo` usa una conexión y un clúster ya guardados en la
+base; su contrato está documentado al final de este README.
 
 ### Instalación y configuración
 
@@ -154,20 +195,9 @@ solo las variables personalizadas `API_HOST` y `API_PORT`.
 
 ### Agentes simulados
 
-Instalar el simulador aparte si aún no está disponible:
-
-```powershell
-python -m pip install snmpsim
-.\data\start_agents.bat
-```
-
-El archivo de arranque actual inicia siete agentes; **no incluye el chasis hpe-c7000-01**.
-Para el octavo agente ejecutar el comando de
-[data/hpe-c7000-01/README.md](data/hpe-c7000-01/README.md), con rutas absolutas.
-Esta implementación no modifica `data/` ni `mibs/`.
-
-Las IP actuales son distintas de `127.0.0.1`: el DL380 escucha en
-`127.0.0.11:16100`. Utilizar el destino documentado para cada agente.
+Para los ocho agentes usa el comando del paso 2 de «Arranque local completo».
+`data/start_agents.bat` es un iniciador antiguo que solo incluye siete agentes;
+usa `scripts/iniciar_agentes.py` para incluir también el chasis.
 
 ### Llamada desde PowerShell
 
@@ -387,7 +417,7 @@ Nimble prestado en la simulación; puede quedar NULL en hardware que no lo expon
 
 Respuestas:
 
-- 201: activo creado; devuelve `activo_id`, `conexion_id`, `cluster_id`, identidad, ubicación y cantidades guardadas.
+- 201: activo creado; devuelve `activo_id`, `conexion_id`, `cluster_id`, identidad, `estado_operativo`, ubicación y cantidades guardadas. El estado se obtiene por SNMP y no se envía en el body.
 - 401: clave de API ausente o incorrecta.
 - 404: conexión o clúster inexistente.
 - 409: serie/hostname duplicado, conexión ya vinculada o referencias modificadas durante la consulta.

@@ -36,6 +36,7 @@ def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
     activo = ficha["activo"]
     return {"ok": True, "activo_id": activo_id, "numero_serie": activo["numero_serie"],
         "hostname": activo["hostname"], "fabricante": activo["fabricante"],
-        "tipo_activo": activo["tipo_activo"], "modelo": activo["modelo"], "ubicacion": datacenter,
+        "tipo_activo": activo["tipo_activo"], "estado_operativo": activo["estado_operativo"],
+        "modelo": activo["modelo"], "ubicacion": datacenter,
         "componentes": cantidades, "metricas_guardadas": len(metricas),
         **({"conexion_id": referencias.conexion_id, "cluster_id": referencias.cluster_id} if referencias else {})}

@@ -100,6 +100,7 @@ class ActivoCreado(BaseModel):
     hostname: str
     fabricante: str
     tipo_activo: Literal["SERVIDOR", "SWITCH", "STORAGE", "CHASIS"]
+    estado_operativo: Literal["Encendido", "Apagado", "Degradado", "Baja"]
     modelo: str
     ubicacion: str
     componentes: dict[str, int]

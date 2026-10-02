@@ -146,6 +146,7 @@ def preparar_api(monkeypatch, ficha):
     monkeypatch.setattr(api, "preparar_registro_activo", query)
     resultado = {"ok": True, "activo_id": 10, "conexion_id": 1, "cluster_id": REF.cluster_id, "numero_serie": "CZ38010ABC",
         "hostname": "hpe-dl380-01", "fabricante": "HPE", "tipo_activo": "SERVIDOR",
+        "estado_operativo": "Encendido",
         "modelo": "ProLiant DL380 Gen10", "ubicacion": "DataCenter-1",
         "componentes": {"cpu": 2}, "metricas_guardadas": 4}
     guardar = MagicMock(return_value=resultado)
@@ -159,6 +160,7 @@ def test_api_crea_y_reutiliza_etl(preparar_api):
         respuesta = client.post(PATH, json=BODY, headers=HEADERS)
     assert respuesta.status_code == 201
     assert respuesta.json()["activo_id"] == 10
+    assert respuesta.json()["estado_operativo"] == "Encendido"
     assert set(respuesta.json()) >= {"conexion_id", "cluster_id"}
     query.assert_awaited_once()
     guardar.assert_called_once()

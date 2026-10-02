@@ -1,0 +1,129 @@
+# Requests para probar la API (extensión "REST Client" de VS Code; también sirven como curl).
+# Arranque: .\.venv\Scripts\python.exe -m api.main   (requiere .env con ETL_API_KEY y, para crear-activo, DATABASE_URL)
+# Antes: data\start_agents.bat para levantar los simuladores SNMP.
+# La API habla HTTP plano en local; para HTTPS ponla detrás de un proxy TLS.
+
+@host = http://127.0.0.1:8001
+@key = reemplazar-por-tu-ETL_API_KEY
+
+### 0. Sin API key -> 401
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+
+{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"x"}
+
+### 1. SERVIDOR (hpe-dl380-01) -> ok, tipo_detectado SERVIDOR
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"Kr7aY5nT2LdUco2B5IAZ","clave_privacidad":"GpoJkRAhPOZg3vA4qHyT"}
+
+### 2. SERVIDOR blade (hpe-bl460c-01)
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.13:16400","usuario":"monitor_bl460c01","clave":"Yb2QzP9mLxT4wVh8Kd3R","clave_privacidad":"Ft6NcE1oRgJ5sWp2Ux9M"}
+
+### 3. CHASIS (hpe-c7000-01)
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.15:16300","usuario":"monitor_c7000","clave":"cy8EcO4BePPAN9Os5zts","clave_privacidad":"NR2yILtdOtWShA70stgf"}
+
+### 4. STORAGE (hpe-storage-fc-01)
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.30:16700","usuario":"monitor_storagefc01","clave":"RcVQ87sKGKNAXteaPhvF","clave_privacidad":"87KIBACIxZCukpKjai0Z"}
+
+### 5. SWITCH (aruba-cx-sw01)
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.20:16600","usuario":"monitor_sw01","clave":"2JePukZ17WBQg10i3J3U","clave_privacidad":"ZynkEa6RTaPcFsqG1Oc5"}
+
+### 6. Clave de autenticación incorrecta -> ok false, error_tipo clave_autenticacion
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"incorrecta123","clave_privacidad":"GpoJkRAhPOZg3vA4qHyT"}
+
+### 7. Destino sin agente -> ok false, error_tipo timeout
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"127.0.0.99:16999","usuario":"monitor_dl380","clave":"Kr7aY5nT2LdUco2B5IAZ"}
+
+### 8. Validación -> 422 con campo ip_gestion
+POST {{host}}/api/etl/probar-conexion
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"ip_gestion":"no es una ip","usuario":"monitor_dl380","clave":"x"}
+
+### ---- crear-activo (ids según la BD local de QA: monitoreo_snmp y clúster CLUSTER-LAB-LOCAL) ----
+### Conexiones libres: 2 dl380, 3 dl360, 4 bl460c01, 5 bl460c02, 6 c7000 (chasis).
+### Ya vinculadas: 7 switch, 8 y 9 storage -> deben dar 409.
+
+### 9. CHASIS (conexión 6) -> 201. Registrar el chasis antes que los blades para que se vinculen a sus slots.
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":6,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 9b. SERVIDOR (conexión 2, dl380) -> 201
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":2,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 9c. SERVIDOR BLADE (conexión 4) -> 201 y queda enlazado a su slot del chasis
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":4,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 9d. SWITCH ya registrado (conexión 7) -> 409
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":7,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 10. Repetir la #9 -> 409 (la conexión ya está vinculada)
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":6,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 11. Conexión inexistente -> 404
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":999999,"cluster_id":"CLUSTER-LAB-LOCAL"}
+
+### 12. Clúster inexistente -> 404
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":1,"cluster_id":"NO-EXISTE"}
+
+### 13. Cuerpo inválido -> 422
+POST {{host}}/api/etl/crear-activo
+Content-Type: application/json
+X-API-Key: {{key}}
+
+{"conexion_id":0,"cluster_id":" "}
