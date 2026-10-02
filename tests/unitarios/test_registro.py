@@ -148,7 +148,7 @@ def preparar_api(monkeypatch, ficha):
         "hostname": "hpe-dl380-01", "fabricante": "HPE", "tipo_activo": "SERVIDOR",
         "estado_operativo": "Encendido",
         "modelo": "ProLiant DL380 Gen10", "ubicacion": "DataCenter-1",
-        "componentes": {"cpu": 2}, "metricas_guardadas": 4}
+        "componentes": {"cpu": 2}, "metricas_guardadas": 4, "eventos_registrados": 2}
     guardar = MagicMock(return_value=resultado)
     monkeypatch.setattr(api, "cargar_registro", guardar)
     return query, guardar
@@ -231,6 +231,74 @@ def test_vinculacion_fallida_revierte_registro(ficha, conexion, monkeypatch):
     conexion[0].rollback.assert_called_once()
     conexion[0].commit.assert_not_called()
     assert conexion[1].executemany.called
+
+
+def eventos_insertados(cursor):
+    return [c.args[1] for c in cursor.execute.call_args_list if c.args[0].startswith("INSERT INTO historico_estado")]
+
+
+def test_alta_con_conexion_registra_dos_eventos(ficha, conexion, monkeypatch):
+    connection, cursor = conexion
+    monkeypatch.setattr(carga, "bloquear_y_validar", MagicMock())
+    monkeypatch.setattr(carga, "vincular", MagicMock())
+    resultado = carga.cargar_registro(CFG, ficha, referencias=REF)
+    assert resultado["eventos_registrados"] == 2
+    # columnas: activo_id, componente_tipo, componente_sn, campo, valor_nuevo, descripcion, fecha_cambio
+    estado, conexion_ev = eventos_insertados(cursor)
+    assert estado[:6] == (10, None, None, "estado_operativo", ficha["activo"]["estado_operativo"],
+                          "Estado inicial al registrar el activo")
+    assert conexion_ev[:6] == (10, None, None, "estado_conexion", "Activo",
+                               "Conexión SNMP vinculada al registrar el activo")
+    metricas = cursor.executemany.call_args.args[1]
+    assert estado[6] == conexion_ev[6] == metricas[0][5]
+    assert estado[6].tzinfo is None
+    connection.commit.assert_called_once()
+
+
+def test_alta_sin_conexion_registra_solo_estado_operativo(ficha, conexion):
+    resultado = carga.cargar_registro(CFG, ficha)
+    assert resultado["eventos_registrados"] == 1
+    assert [e[3] for e in eventos_insertados(conexion[1])] == ["estado_operativo"]
+
+
+def test_evento_estado_operativo_degradado(ficha, conexion):
+    ficha["activo"]["estado_operativo"] = "Degradado"
+    carga.cargar_registro(CFG, ficha)
+    assert eventos_insertados(conexion[1])[0][4] == "Degradado"
+
+
+def test_evento_de_conexion_se_inserta_despues_de_vincular(ficha, conexion, monkeypatch):
+    orden = []
+    monkeypatch.setattr(carga, "bloquear_y_validar", MagicMock())
+    monkeypatch.setattr(carga, "vincular", lambda *args: orden.append("vincular"))
+    conexion[1].execute.side_effect = lambda sql, p, base=conexion[1].execute.side_effect: (
+        orden.append(p[3]) if sql.startswith("INSERT INTO historico_estado") else None, base(sql, p))
+    carga.cargar_registro(CFG, ficha, referencias=REF)
+    assert orden == ["estado_operativo", "vincular", "estado_conexion"]
+
+
+def test_falla_de_vincular_no_confirma_eventos(ficha, conexion, monkeypatch):
+    monkeypatch.setattr(carga, "bloquear_y_validar", MagicMock())
+    monkeypatch.setattr(carga, "vincular", MagicMock(side_effect=ActivoDuplicado("Conflicto")))
+    with pytest.raises(ActivoDuplicado):
+        carga.cargar_registro(CFG, ficha, referencias=REF)
+    assert len(eventos_insertados(conexion[1])) == 1  # el de conexión nunca se intenta
+    conexion[0].rollback.assert_called_once()
+    conexion[0].commit.assert_not_called()
+
+
+def test_conflicto_previo_no_inserta_eventos(ficha, conexion, monkeypatch):
+    monkeypatch.setattr(carga, "bloquear_y_validar", MagicMock(side_effect=ActivoDuplicado("Ya vinculada")))
+    with pytest.raises(ActivoDuplicado):
+        carga.cargar_registro(CFG, ficha, referencias=REF)
+    assert eventos_insertados(conexion[1]) == []
+    conexion[0].commit.assert_not_called()
+
+
+def test_evento_rechaza_columnas_no_permitidas(conexion):
+    from etl.repositorio import _insertar
+    with pytest.raises(DatosIncompletos):
+        _insertar(conexion[1], "historico_estado", {"campo": "x", "columna_extra": 1})
 
 
 def test_cambio_concurrente_impide_registro(monkeypatch):

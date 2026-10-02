@@ -105,5 +105,6 @@ class ActivoCreado(BaseModel):
     ubicacion: str
     componentes: dict[str, int]
     metricas_guardadas: int
+    eventos_registrados: int
     conexion_id: int
     cluster_id: str

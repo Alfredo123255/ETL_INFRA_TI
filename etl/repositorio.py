@@ -20,7 +20,19 @@ COLUMNAS = {
     "fuente_poder": ("activo_id", "numero_serial", "modelo", "consumo_w", "tipo_corriente", "estado"),
     "ventilador": ("activo_id", "numero_serial", "velocidad_rpm", "modelo", "estado"),
     "controladora_raid": ("activo_id", "modelo", "raid", "numero_serial", "estado"),
+    "historico_estado": ("activo_id", "componente_tipo", "componente_sn", "campo", "valor_nuevo",
+        "descripcion", "fecha_cambio"),
 }
+
+# Vocabulario de historico_estado.campo: exactamente los nombres de las columnas que cambian
+# ("estado_operativo" en activo, "estado_conexion" en monitoreo_snmp). El futuro ciclo automático
+# debe reutilizar estas constantes para comparar y registrar cambios.
+CAMPO_ESTADO_OPERATIVO = "estado_operativo"
+CAMPO_ESTADO_CONEXION = "estado_conexion"
+ESTADO_CONEXION_VINCULADA = "Activo"  # el valor que vincular() deja en monitoreo_snmp
+# Textos fijos: nunca incluyen IP, usuario, claves ni datos del equipo.
+DESCRIPCION_ESTADO_INICIAL = "Estado inicial al registrar el activo"
+DESCRIPCION_CONEXION_VINCULADA = "Conexión SNMP vinculada al registrar el activo"
 
 
 def _insertar(cursor, tabla, datos):
@@ -109,6 +121,17 @@ def vincular_slot_blade(cursor, activo_id, activo):
 
 def crear_servidor(conexion, ficha):
     return crear_activo(conexion, ficha)
+
+
+def registrar_evento_estado(cursor_o_conexion, activo_id, campo, valor_nuevo, descripcion, fecha,
+                            componente_tipo=None, componente_sn=None):
+    """Inserta un evento en historico_estado dentro de la transacción del llamador."""
+    datos = {"activo_id": activo_id, "componente_tipo": componente_tipo, "componente_sn": componente_sn,
+             "campo": campo, "valor_nuevo": valor_nuevo, "descripcion": descripcion, "fecha_cambio": fecha}
+    if hasattr(cursor_o_conexion, "cursor"):
+        with cursor_o_conexion.cursor() as cursor:
+            return _insertar(cursor, "historico_estado", datos)
+    return _insertar(cursor_o_conexion, "historico_estado", datos)
 
 
 def guardar_metricas(conexion, activo_id, metricas):

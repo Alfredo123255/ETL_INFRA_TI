@@ -408,7 +408,22 @@ existente: `monitoreo_snmp.activo_id`, estado `Activo` y fecha de última actual
 No se crea una segunda conexión ni se cambia su frecuencia. Antes de guardar se
 bloquean y revalidan conexión y clúster; una vinculación previa o un cambio concurrente
 impiden la creación. Si falla el vínculo, también se revierten activo, componentes y
-métricas. No se genera un evento en `historico_estado` por esta primera inserción.
+métricas.
+
+También en esa transacción se insertan eventos iniciales en `historico_estado`, con la
+misma marca de tiempo UTC de las métricas (`fecha_cambio` se pasa explícita):
+
+| `campo` | `valor_nuevo` | `descripcion` | Cuándo |
+|---|---|---|---|
+| `estado_operativo` | el estado real de la ficha (`Encendido`, `Apagado` o `Degradado`) | `Estado inicial al registrar el activo` | siempre |
+| `estado_conexion` | `Activo` | `Conexión SNMP vinculada al registrar el activo` | solo si hay conexión vinculada, tras `vincular()` |
+
+Los valores de `campo` son exactamente `estado_operativo` y `estado_conexion` (los nombres
+de las columnas que cambian); el futuro ciclo automático debe reutilizarlos
+(`etl/repositorio.py`) para comparar y registrar cambios. El alta no registra eventos de
+componentes (discos, puertos, fuentes, etc.): los generará el ciclo de monitoreo cuando
+detecte un cambio. Si el alta falla o se revierte, no queda ningún evento. La respuesta 201
+incluye `eventos_registrados` (2 con conexión vinculada, 1 sin ella).
 Los activos creados con el contrato anterior no se vinculan retroactivamente.
 Los campos administrativos sin OID, como `switch.tipo_red`,
 `switch.modo_operacion` y `storage.iops` nominal, quedan NULL para que los
