@@ -125,3 +125,145 @@ def test_imprime_historico_completo(altas, capsys):
         print("\nactivo_id | campo | valor_nuevo | componente_tipo | descripcion | fecha_cambio")
         for f in _eventos():
             print(f[0], f[2], f[3], f[4], f[6], f[7], sep=" | ")
+
+
+@pytest.mark.parametrize("nombre", ORDEN)
+def test_iteracion_periodica_guarda_metricas_y_conserva_eventos(altas, base, cliente, nombre):
+    import asyncio
+    from etl.monitoreo import ejecutar_iteracion
+    activo_id = altas[nombre]["activo_id"]
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+        metricas_antes = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM historico_estado WHERE activo_id=%s", (activo_id,))
+        eventos_antes = cur.fetchone()[0]
+        cur.execute("SELECT xmin::text FROM activo WHERE id=%s", (activo_id,))
+        version_antes = cur.fetchone()[0]
+    resultado = asyncio.run(ejecutar_iteracion(cliente.app.state.config, base[nombre]))
+    assert resultado["ok"] is True
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+        assert cur.fetchone()[0] == metricas_antes + resultado["metricas"]
+        cur.execute("SELECT count(*) FROM historico_estado WHERE activo_id=%s", (activo_id,))
+        assert cur.fetchone()[0] == eventos_antes
+        cur.execute("SELECT ultima_actualizacion, xmin::text FROM activo WHERE id=%s", (activo_id,))
+        fecha_activo, version_despues = cur.fetchone()
+        assert fecha_activo is not None
+        assert version_despues != version_antes
+
+
+def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
+    import asyncio
+    from etl.monitoreo import ejecutar_iteracion, leer_conexion, registrar_fallo
+    activo_id = altas["aruba-cx-sw01"]["activo_id"]
+    conexion_id = base["aruba-cx-sw01"]
+    config = cliente.app.state.config
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT id, estado FROM puerto_switch WHERE switch_id=%s ORDER BY id LIMIT 1", (activo_id,))
+        puerto_id, estado_puerto = cur.fetchone()
+        cur.execute("UPDATE puerto_switch SET estado=%s WHERE id=%s",
+                    ("Apagado" if estado_puerto == "Encendido" else "Encendido", puerto_id))
+        cur.execute("UPDATE activo SET estado_operativo='Baja' WHERE id=%s", (activo_id,))
+    resultado = asyncio.run(ejecutar_iteracion(config, conexion_id))
+    assert resultado["ok"] and resultado["eventos"] >= 2
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT estado FROM puerto_switch WHERE id=%s", (puerto_id,))
+        assert cur.fetchone()[0] == estado_puerto
+        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s", (activo_id,))
+        assert cur.fetchone()[0] == altas["aruba-cx-sw01"]["estado_operativo"]
+        cur.execute("SELECT ip_gestion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
+        destino = cur.fetchone()[0]
+        cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+        fecha_activo = cur.fetchone()[0]
+        cur.execute("SELECT fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
+        fecha_conexion = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+        metricas_antes = cur.fetchone()[0]
+        cur.execute("UPDATE monitoreo_snmp SET ip_gestion='127.0.0.1:1' WHERE id=%s", (conexion_id,))
+    try:
+        fallo = asyncio.run(ejecutar_iteracion(config, conexion_id))
+        assert fallo["ok"] is False and fallo["eventos"] == 1
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("SELECT estado_conexion, fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
+            assert cur.fetchone() == ("Sin conexión", fecha_conexion)
+            cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            assert cur.fetchone()[0] == fecha_activo
+            cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+            assert cur.fetchone()[0] == metricas_antes
+        assert registrar_fallo(config, leer_conexion(config, conexion_id), "timeout")["eventos"] == 0
+    finally:
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("UPDATE monitoreo_snmp SET ip_gestion=%s WHERE id=%s", (destino, conexion_id))
+    recuperacion = asyncio.run(ejecutar_iteracion(config, conexion_id))
+    assert recuperacion["ok"] and recuperacion["eventos"] == 1
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT campo, valor_nuevo FROM historico_estado WHERE activo_id=%s ORDER BY id DESC LIMIT 2", (activo_id,))
+        assert cur.fetchall() == [("estado_conexion", "Activo"), ("estado_conexion", "Sin conexión")]
+
+
+def test_componentes_nuevos_y_ausentes_y_campos_del_front(altas, base, cliente):
+    import asyncio
+    from etl.monitoreo import guardar_iteracion, leer_conexion
+    from etl.ciclo import preparar_registro_activo
+    from etl.snmp_cliente import ConexionSNMP
+    from api.dto import separar_destino
+    activo_id = altas["aruba-cx-sw01"]["activo_id"]
+    config = cliente.app.state.config
+    referencia = leer_conexion(config, base["aruba-cx-sw01"])
+    host, puerto = separar_destino(referencia.ip_gestion)
+    conexion = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave,
+                           referencia.clave_privacidad, config.snmp_context_name)
+    ficha = asyncio.run(preparar_registro_activo(conexion, config, ip_gestion=referencia.ip_gestion))
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("UPDATE switch SET modo_operacion='L3' WHERE id=%s", (activo_id,))
+        cur.execute("UPDATE activo SET responsable='Operaciones' WHERE id=%s", (activo_id,))
+    nuevo = {"numero_puerto": "9/9/9", "velocidad": "1000 Mbps", "estado": "Encendido"}
+    ficha["componentes"]["puerto_switch"].append(nuevo)
+    agregado = guardar_iteracion(config, referencia, ficha)
+    assert agregado["eventos"] == 1
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT id FROM puerto_switch WHERE switch_id=%s AND numero_puerto='9/9/9'", (activo_id,))
+        puerto_id = cur.fetchone()[0]
+        cur.execute("SELECT modo_operacion FROM switch WHERE id=%s", (activo_id,))
+        assert cur.fetchone()[0] == "L3"
+        cur.execute("SELECT responsable FROM activo WHERE id=%s", (activo_id,))
+        assert cur.fetchone()[0] == "Operaciones"
+    ficha["componentes"]["puerto_switch"].pop()
+    retirado = guardar_iteracion(config, referencia, ficha)
+    assert retirado["eventos"] == 1
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT estado FROM puerto_switch WHERE id=%s", (puerto_id,))
+        assert cur.fetchone()[0] == "Baja"
+
+
+def test_slot_y_blade_conservan_su_vinculo(altas, base, cliente):
+    import asyncio
+    from etl.monitoreo import guardar_iteracion, leer_conexion
+    from etl.ciclo import preparar_registro_activo
+    from etl.snmp_cliente import ConexionSNMP
+    from api.dto import separar_destino
+    chasis_id = altas["hpe-c7000-01"]["activo_id"]
+    blade_id = altas["hpe-bl460c-01"]["activo_id"]
+    config = cliente.app.state.config
+    referencia = leer_conexion(config, base["hpe-c7000-01"])
+    host, puerto = separar_destino(referencia.ip_gestion)
+    conexion = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave,
+                           referencia.clave_privacidad, config.snmp_context_name)
+    ficha = asyncio.run(preparar_registro_activo(conexion, config, ip_gestion=referencia.ip_gestion))
+    slot = next(s for s in ficha["componentes"]["chasis_slot"] if s["numero_slot"] == 1)
+    original = slot.copy()
+    slot.update(estado="LIBRE", hostname_servidor=None)
+    assert guardar_iteracion(config, referencia, ficha)["eventos"] == 1
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT servidor_id FROM chasis_slot WHERE chasis_id=%s AND numero_slot=1", (chasis_id,))
+        assert cur.fetchone()[0] is None
+        cur.execute("SELECT id_chasis_slot FROM servidor WHERE id=%s", (blade_id,))
+        assert cur.fetchone()[0] is None
+    slot.update(original)
+    assert guardar_iteracion(config, referencia, ficha)["eventos"] == 1
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT id, servidor_id FROM chasis_slot WHERE chasis_id=%s AND numero_slot=1", (chasis_id,))
+        slot_id, servidor_id = cur.fetchone()
+        assert servidor_id == blade_id
+        cur.execute("SELECT id_chasis_slot FROM servidor WHERE id=%s", (blade_id,))
+        assert cur.fetchone()[0] == slot_id

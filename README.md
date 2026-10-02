@@ -101,7 +101,7 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
 
 En esta computadora también existe
 `C:\Users\jenny\OneDrive\Escritorio\Tesis\iniciar_sistema_local.py`, que arranca
-API, backend y frontend si sus puertos están libres y genera una colección Postman.
+API, programador de monitoreo, backend y frontend y genera una colección Postman.
 Para usarlo en esta instalación, después de iniciar los agentes, ejecuta:
 
 ```powershell
@@ -114,6 +114,44 @@ Remove-Item Env:PGPASSWORD
 
 La colección queda en
 `C:\Users\jenny\OneDrive\Escritorio\Tesis\outputs\sistema_local\Prueba_local.postman_collection.json`.
+
+## Monitoreo periódico de activos ya registrados
+
+El alta por Postman vincula `monitoreo_snmp.activo_id`. Para iniciar el ETL periódico,
+ejecuta en otra terminal, con el mismo `.env` que utiliza la API:
+
+```powershell
+cd C:\INGESOFT\ETL_INFRA_TI
+.\.venv\Scripts\python.exe -B -m etl.programador
+```
+
+`frecuencia_actualizacion` se interpreta en **segundos** (por ejemplo, `60` = un minuto).
+En cada ciclo el programador relee las conexiones vinculadas, su frecuencia y sus
+credenciales; los cambios en la BD se aplican en la próxima consulta. Solo se consultan
+las conexiones en `Activo` o `Sin conexión` (estas últimas se reintentan). Las conexiones
+en `Inactivo`, sin activo vinculado o con frecuencia menor o igual a cero no se monitorean. Un bloqueo
+de PostgreSQL impide que dos programadores periódicos corran al mismo tiempo.
+
+Para probar una sola iteración sin mantener el proceso abierto:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m etl.programador --una-vez --conexion-id 7
+```
+
+En una lectura exitosa, el ETL compara los datos SNMP con `activo`, su subtipo y sus
+componentes. Actualiza únicamente los valores cambiados, conserva los campos
+administrativos del front, añade las métricas a `metrica_historica` y escribe
+`activo.ultima_actualizacion` en cada lectura exitosa, incluso sin otros cambios.
+Esta columna guarda solo la fecha de Lima; la hora exacta de la consulta se registra
+en `monitoreo_snmp.fecha_ultima_actualizacion`. Los cambios de `estado_operativo` y de `estado` en
+componentes generan filas en `historico_estado`; los componentes nuevos o que dejan
+de reportarse también generan un evento. Un componente ausente queda con estado
+`Baja` (o `LIBRE` para un slot) y conserva su ID para el historial. Si falla SNMP
+y la conexión estaba `Activo`, pasa a `Sin conexión` y se registra el evento; al
+recuperarse vuelve a `Activo` y se registra otro. Los fallos repetidos no duplican eventos. Si falla
+SNMP, no se modifican ni `activo.ultima_actualizacion` ni
+`monitoreo_snmp.fecha_ultima_actualizacion`: ambas conservan la última lectura
+exitosa. La hora del fallo se guarda únicamente en el evento de estado.
 
 ## Datos simulados
 

@@ -45,7 +45,8 @@ def _insertar(cursor, tabla, datos):
     # Tabla y columnas solo proceden de la lista fija; los valores siempre son parámetros.
     sql = f"INSERT INTO {tabla} ({', '.join(columnas)}) VALUES ({', '.join(['%s'] * len(columnas))}) RETURNING id"
     cursor.execute(sql, tuple(datos[columna] for columna in columnas))
-    return cursor.fetchone()[0]
+    fila = cursor.fetchone()
+    return fila["id"] if isinstance(fila, dict) else fila[0]
 
 
 def crear_activo(conexion, ficha):
