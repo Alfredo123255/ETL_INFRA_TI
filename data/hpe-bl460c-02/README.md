@@ -93,9 +93,10 @@ snmpget -v3 -u monitor_bl460c02 -l authPriv \
 
 ## Índice de caché
 
-snmpsim indexa `public.snmprec` en un `.dbm` bajo `--cache-dir` la primera vez (o cuando el
-archivo cambia). Si se edita `public.snmprec` a mano y el agente ya está corriendo, hace falta
-reiniciarlo (o pasar `--force-index-rebuild`) para que tome los cambios.
+snmpsim indexa `public.snmprec` en un `.dbm` bajo `--cache-dir`. En cada consulta
+comprueba la fecha de modificación del archivo; si cambió, cierra la versión anterior
+y reconstruye el índice. Puedes editar el archivo con el agente encendido: guarda el
+cambio y compruébalo con una nueva consulta SNMP. No hace falta reiniciar el agente.
 
 ## Especificaciones simuladas (resumen)
 

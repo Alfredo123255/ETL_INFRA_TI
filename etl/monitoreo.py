@@ -10,7 +10,7 @@ from etl.db import conexion_bd
 from etl.errores import DatosIncompletos, ErrorExtraccion
 from etl.metricas import construir_metricas
 from etl.repositorio import (COLUMNAS, _insertar, guardar_metricas, registrar_evento_estado,
-    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO)
+    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO, resolver_slots_por_serie)
 from etl.snmp_cliente import ConexionSNMP
 from api.dto import separar_destino
 from api.seguridad import resolver_destino
@@ -100,9 +100,36 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
     disponibles = {fila["id"]: fila for fila in anteriores}
     eventos = cambios = 0
     for posicion, nueva in enumerate(nuevas):
+        if nueva.get("estado") == "Baja":
+            raise DatosIncompletos("Baja solo aplica a activos, no a componentes.")
         clave = _identificador(tabla, nueva, posicion)
         coincidencias = [(i, fila) for i, fila in disponibles.items()
                          if _identificador(tabla, fila, anteriores.index(fila)) == clave]
+        if not coincidencias and tabla == "tarjeta_red" and clave[0] == "numero_serial":
+            # Una NIC registrada antes de que el agente expusiera su serial
+            # conserva su id y sus puertos. Si varias comparten modelo, se
+            # usa la posición estable de la lectura previa.
+            modelo = nueva.get("modelo")
+            candidatos = [(i, fila) for i, fila in disponibles.items()
+                          if fila.get("numero_serial") is None and fila.get("modelo") == modelo]
+            if modelo and len(candidatos) == 1 and sum(
+                    1 for item in nuevas if item.get("modelo") == modelo) == 1:
+                coincidencias = candidatos
+            elif posicion < len(anteriores):
+                anterior = anteriores[posicion]
+                if anterior["id"] in disponibles and anterior.get("numero_serial") is None \
+                        and anterior.get("modelo") == modelo:
+                    coincidencias = [(anterior["id"], anterior)]
+        if not coincidencias and tabla in ("controladora_raid", "ventilador") \
+                and clave[0] == "numero_serial" and posicion < len(anteriores) \
+                and "Dorado" in (nueva.get("modelo") or ""):
+            anterior = anteriores[posicion]
+            prefijo = "Controller " if tabla == "controladora_raid" else "Fan "
+            if anterior["id"] in disponibles and anterior.get("numero_serial") is None \
+                    and (anterior.get("modelo") or "").startswith(prefijo):
+                # Conserva el id de las piezas Dorado creadas antes de leer
+                # la etiqueta electrónica del agente.
+                coincidencias = [(anterior["id"], anterior)]
         if len(coincidencias) > 1:
             raise DatosIncompletos("Hay componentes duplicados en la base de datos.")
         puertos = nueva.get("puertos", []) if tabla == "tarjeta_red" else []
@@ -127,11 +154,12 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
             cambios += c
             eventos += e
     for anterior in disponibles.values():
-        if tabla == "tarjeta_red":
-            c, e = _reconciliar(cur, activo_id, "puerto_tarjeta_red", anterior["id"], [], fecha)
-            cambios += c
-            eventos += e
-        baja = "LIBRE" if tabla == "chasis_slot" else "Baja"
+        # Una fila ausente en una lectura SNMP no demuestra que un componente
+        # haya cambiado de estado. Conservar su último estado conocido evita
+        # registrar una Baja administrativa para discos, NIC y demás piezas.
+        if tabla != "chasis_slot":
+            continue
+        baja = "LIBRE"
         datos_baja = {"estado": baja, **({"hostname_servidor": None} if tabla == "chasis_slot" else {})}
         if any(anterior.get(k) != v for k, v in datos_baja.items()):
             _actualizar_fila(cur, tabla, anterior["id"], anterior, datos_baja)
@@ -147,7 +175,7 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
 def _sincronizar_slots(cur, chasis_id):
     """Mantiene el vínculo blade/slot cuando SNMP cambia la ocupación del chasis."""
     cur.execute("""SELECT s.id, s.servidor_id, s.hostname_servidor, s.estado,
-        a.cluster, a.ubicacion FROM chasis_slot s JOIN activo a ON a.id=s.chasis_id
+        a.ubicacion FROM chasis_slot s JOIN activo a ON a.id=s.chasis_id
         WHERE s.chasis_id=%s ORDER BY s.id FOR UPDATE OF s""", (chasis_id,))
     slots = cur.fetchall()
     deseados = {}
@@ -155,8 +183,8 @@ def _sincronizar_slots(cur, chasis_id):
         servidor = None
         if slot["estado"] != "LIBRE" and slot["hostname_servidor"]:
             cur.execute("""SELECT b.id FROM activo b JOIN servidor v ON v.id=b.id AND v.tipo='BLADE'
-                WHERE b.hostname=%s AND b.cluster=%s AND b.ubicacion=%s""",
-                (slot["hostname_servidor"], slot["cluster"], slot["ubicacion"]))
+                WHERE b.hostname=%s AND b.ubicacion=%s""",
+                (slot["hostname_servidor"], slot["ubicacion"]))
             coincidencias = cur.fetchall()
             if len(coincidencias) > 1:
                 raise DatosIncompletos("El slot coincide con varios servidores blade.")
@@ -194,13 +222,27 @@ def registrar_fallo(config, referencia, tipo):
     fecha = datetime.now(timezone.utc).replace(tzinfo=None)
     with conexion_bd(config) as db, db.cursor(cursor_factory=RealDictCursor) as cur:
         actual = _bloquear_conexion(cur, referencia)
+        if actual["estado_conexion"] == "Inactivo":
+            return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
+        eventos = 0
         if actual["estado_conexion"] == "Activo":
             cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Sin conexión' WHERE id=%s",
                         (referencia.id,))
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Sin conexión", f"Falló la consulta SNMP ({tipo})", fecha)
-            return {"conexion_id": referencia.id, "ok": False, "eventos": 1}
-    return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
+            eventos += 1
+        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
+        activo = cur.fetchone()
+        if activo is None:
+            raise DatosIncompletos("No existe el activo de la conexión SNMP.")
+        # Una pérdida de SNMP no demuestra que el equipo esté apagado.
+        # Degradado indica que su operación no se puede verificar.
+        if activo["estado_operativo"] == "Encendido":
+            cur.execute("UPDATE activo SET estado_operativo='Degradado' WHERE id=%s", (referencia.activo_id,))
+            registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_OPERATIVO,
+                "Degradado", f"Estado operativo no verificable por fallo SNMP ({tipo}): Encendido → Degradado", fecha)
+            eventos += 1
+    return {"conexion_id": referencia.id, "ok": False, "eventos": eventos}
 
 
 def guardar_iteracion(config, referencia, ficha):
@@ -222,7 +264,8 @@ def guardar_iteracion(config, referencia, ficha):
         # Los campos administrativos, ubicación y clúster pertenecen al front.
         campos_activo = {k: v for k, v in activo.items() if k in COLUMNAS["activo"] and
                          k not in ("numero_serie", "ubicacion", "cluster", "ip_gestion") and v is not None}
-        campos_activo["ultima_actualizacion"] = activo["ultima_actualizacion"]
+        # La lectura exitosa comparte la misma marca UTC con métricas y conexión.
+        campos_activo["ultima_actualizacion"] = fecha
         cambios = bool(_actualizar_fila(cur, "activo", referencia.activo_id, anterior,
                                        campos_activo, forzar=("ultima_actualizacion",)))
         eventos = 0
@@ -242,6 +285,8 @@ def guardar_iteracion(config, referencia, ficha):
         if set(componentes) - set(COMPATIBLES[activo["tipo_activo"]]):
             raise DatosIncompletos("La ficha contiene componentes incompatibles.")
         for tabla, filas in componentes.items():
+            if tabla == "chasis_slot":
+                filas = resolver_slots_por_serie(cur, filas, anterior["ubicacion"])
             c, e = _reconciliar(cur, referencia.activo_id, tabla, referencia.activo_id, filas, fecha)
             cambios += c
             eventos += e

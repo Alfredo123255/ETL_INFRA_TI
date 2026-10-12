@@ -74,17 +74,18 @@ snmpget -v3 -u monitor_c7000 -l authPriv \
 
 ## Índice de caché
 
-snmpsim indexa `public.snmprec` en un `.dbm` bajo `--cache-dir` la primera vez (o cuando el
-archivo cambia). Si se edita `public.snmprec` a mano y el agente ya está corriendo, hace falta
-reiniciarlo (o pasar `--force-index-rebuild`) para que tome los cambios.
+snmpsim indexa `public.snmprec` en un `.dbm` bajo `--cache-dir`. En cada consulta
+comprueba la fecha de modificación del archivo; si cambió, cierra la versión anterior
+y reconstruye el índice. Puedes editar el archivo con el agente encendido: guarda el
+cambio y compruébalo con una nueva consulta SNMP. No hace falta reiniciar el agente.
 
 ## Especificaciones simuladas (resumen)
 
 - Hostname: `hpe-c7000-01` · Serie: `CZ7000ABCD` · Modelo: BladeSystem c7000 Enclosure G2
 - 8 slots (`cantidad_slots`): slot 1 = `hpe-bl460c-01` (Ocupado, agente propio en
   [`data/hpe-bl460c-01`](../hpe-bl460c-01/)), slot 2 = `hpe-bl460c-02` (Ocupado, agente propio en
-  [`data/hpe-bl460c-02`](../hpe-bl460c-02/)), slot 3 = `hpe-bl460c-03` (Degradado — presente pero
-  con falla, para probar ese estado; sin agente propio), slots 4-8 = Libres
+  [`data/hpe-bl460c-02`](../hpe-bl460c-02/)), slot 3 = `hpe-bl460c-03` (Degradado, agente propio en
+  [`data/hpe-bl460c-03`](../hpe-bl460c-03/), con un disco degradado), slots 4-8 = Libres
 - 4 fuentes de poder (una marcada `failed`/Apagado, a propósito) · 4 ventiladores (uno marcado
   Degradado) · 4 módulos de interconexión de red (Virtual Connect / switches Ethernet de blade)
 - Medidor de potencia total del chasis (`cpqRackPowerMeterWattage`): 3200 W

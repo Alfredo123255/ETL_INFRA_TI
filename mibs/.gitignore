@@ -9,3 +9,7 @@
 # de MIB de multiples fabricantes), este subconjunto si se versiona.
 !hpe-real/
 !hpe-real/**
+
+# Paquetes Huawei usados por los cuatro agentes de data/huawei-*.
+!huawei/
+!huawei/**

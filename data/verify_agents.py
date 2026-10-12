@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Script de verificacion de los agentes SNMPv3 simulados hpe-dl380-01,
-hpe-dl360-01, hpe-c7000-01, hpe-bl460c-01, hpe-bl460c-02, aruba-cx-sw01,
+hpe-dl360-01, hpe-c7000-01, hpe-bl460c-01, hpe-bl460c-02,
+hpe-bl460c-03, aruba-cx-sw01,
 hpe-storage-fc-01 y hpe-storage-fc-02.
 
 Hace un GET contra sysDescr.0 y contra 2-4 OID mapeados (ver
@@ -19,6 +20,7 @@ las dos unidades de storage, para comprobar que los valores crecen
 Uso: python data/verify_agents.py
 """
 import asyncio
+import argparse
 import os
 import time
 
@@ -118,6 +120,21 @@ AGENTS = [
         ],
     },
     {
+        "nombre": "hpe-bl460c-03",
+        "host": "127.0.0.16",
+        "puerto": 16900,
+        "usuario": "monitor_bl460c03",
+        "auth_key": "Fq8DzT4mWpK7vN2sRb6C",
+        "priv_key": "Jr5XeA9pLcQ2tW8mHk4V",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("hostname (cpqHoSystemName.0)", "1.3.6.1.4.1.232.11.2.2.12.0"),
+            ("numero_serie (cpqSiSysSerialNum.0)", "1.3.6.1.4.1.232.2.2.2.1.0"),
+            ("estado_operativo (cpqHeMibCondition.0)", "1.3.6.1.4.1.232.6.1.3.0"),
+            ("ip_sistema_operativo (ipAdEntAddr)", "1.3.6.1.2.1.4.20.1.1.10.10.12.15"),
+        ],
+    },
+    {
         "nombre": "aruba-cx-sw01",
         "host": "127.0.0.20",
         "puerto": 16600,
@@ -159,6 +176,46 @@ AGENTS = [
             ("PSU2 failed (cpqHeFltTolPowerSupplyCondition)", "1.3.6.1.4.1.232.6.2.9.3.1.4.1.2"),
             ("RAID faultTol mirroring (cpqFcaLogDrvFaultTol)", "1.3.6.1.4.1.232.16.2.3.1.1.3.1.1"),
             ("IOPS lectura acumuladas (ioReads, PRESTADO Nimble)", "1.3.6.1.4.1.37447.1.3.2.0"),
+        ],
+    },
+    {
+        "nombre": "huawei-2288h-v5-01", "host": "127.0.0.40", "puerto": 17000,
+        "usuario": "monitor_hw2288", "auth_key": "Hw2288Lab2026Auth", "priv_key": "Hw2288Lab2026Auth",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("serie iBMC", "1.3.6.1.4.1.2011.2.235.1.1.1.7.0"),
+            ("tipo RAM DIMM 1", "1.3.6.1.4.1.2011.2.235.1.1.16.50.1.11.1"),
+            ("entrada AC fuente 1", "1.3.6.1.4.1.2011.2.235.1.1.6.50.1.3.1"),
+        ],
+    },
+    {
+        "nombre": "huawei-ch121-v5-01", "host": "127.0.0.41", "puerto": 17100,
+        "usuario": "monitor_hwch121", "auth_key": "HwCH121Lab2026Auth", "priv_key": "HwCH121Lab2026Auth",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("serie blade", "1.3.6.1.4.1.2011.2.235.1.1.1.7.0"),
+            ("serie chasis asociado", "1.3.6.1.4.1.2011.2.235.1.1.44.7.0"),
+            ("slot", "1.3.6.1.4.1.2011.2.235.1.1.1.15.0"),
+        ],
+    },
+    {
+        "nombre": "huawei-e9000-01", "host": "127.0.0.42", "puerto": 17200,
+        "usuario": "monitor_hwe9000", "auth_key": "HwE9000Lab2026Auth", "priv_key": "HwE9000Lab2026Auth",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("serie chasis", "1.3.6.1.4.1.2011.2.82.1.82.2.2001.1.15.1"),
+            ("blade slot 1 presente", "1.3.6.1.4.1.2011.2.82.1.82.4.1.6.0"),
+            ("serie blade slot 1", "1.3.6.1.4.1.2011.2.82.1.82.4.1.2004.1.10.1"),
+        ],
+    },
+    {
+        "nombre": "huawei-dorado-01", "host": "127.0.0.43", "puerto": 17300,
+        "usuario": "monitor_hwdorado", "auth_key": "HwDoradoLab2026Auth", "priv_key": "HwDoradoLab2026Auth",
+        "oids": [
+            ("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+            ("serie OceanStor", "1.3.6.1.4.1.34774.4.1.1.1.0"),
+            ("serie disco 1", "1.3.6.1.4.1.34774.4.1.23.5.1.1.15.1"),
+            ("IOPS nodo 1", "1.3.6.1.4.1.34774.4.1.21.3.1.5.1"),
         ],
     },
 ]
@@ -423,10 +480,10 @@ async def _walk_completo(agente):
     return oids_devueltos
 
 
-async def probar_walk_completo():
+async def probar_walk_completo(agentes=AGENTS):
     print("\n=== Walk completo (GETNEXT sucesivos sobre 1.3.6.1) vs. public.snmprec ===")
 
-    for agente in AGENTS:
+    for agente in agentes:
         nombre = agente["nombre"]
         print(f"\n  -- {nombre} --")
 
@@ -458,11 +515,17 @@ async def probar_walk_completo():
 
 
 async def main():
-    for agente in AGENTS:
+    parser=argparse.ArgumentParser(description="Verificar agentes SNMP simulados")
+    parser.add_argument("--solo",nargs="+",choices=[agent["nombre"] for agent in AGENTS],
+                        help="Verificar únicamente estos agentes")
+    args=parser.parse_args()
+    agentes=[agent for agent in AGENTS if not args.solo or agent["nombre"] in args.solo]
+    for agente in agentes:
         await consultar_agente(agente)
-    await probar_contadores_crecientes()
-    await probar_iops_storage()
-    await probar_walk_completo()
+    if not args.solo:
+        await probar_contadores_crecientes()
+        await probar_iops_storage()
+    await probar_walk_completo(agentes)
 
 
 if __name__ == "__main__":

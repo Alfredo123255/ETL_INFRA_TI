@@ -118,6 +118,15 @@ async def test_prioridad_switch():
     assert await detectar_tipo("1.3.6.1.4.1.47196.1",query)=="SWITCH"
     query.assert_awaited_once_with("1.3.6.1.4.1.47196")
 
+@pytest.mark.parametrize("object_id,roots,expected", [
+    ("1.3.6.1.4.1.2011.2.235.1.1", [False, True], "SERVIDOR"),
+    ("1.3.6.1.4.1.2011.2.82.1.82", [True], "CHASIS"),
+    ("1.3.6.1.4.1.34774.4.1", [True], "STORAGE"),
+])
+async def test_deteccion_huawei(object_id,roots,expected):
+    query=AsyncMock(side_effect=roots)
+    assert await detectar_tipo(object_id,query)==expected
+
 async def test_deteccion_fallida():
     assert await detectar_tipo("1.3.6.1.4.1.232.1",AsyncMock(side_effect=OSError))=="DESCONOCIDO"
 

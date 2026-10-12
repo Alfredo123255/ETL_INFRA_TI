@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 EXPECTED={
  "hpe-dl380-01":"SERVIDOR","hpe-dl360-01":"SERVIDOR",
- "hpe-bl460c-01":"SERVIDOR","hpe-bl460c-02":"SERVIDOR",
+ "hpe-bl460c-01":"SERVIDOR","hpe-bl460c-02":"SERVIDOR","hpe-bl460c-03":"SERVIDOR",
  "hpe-c7000-01":"CHASIS","hpe-storage-fc-01":"STORAGE",
  "hpe-storage-fc-02":"STORAGE","aruba-cx-sw01":"SWITCH",
 }

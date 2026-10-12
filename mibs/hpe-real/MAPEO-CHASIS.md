@@ -86,8 +86,8 @@ Tabla base: `cpqRackCommonEnclosureTable` (`CPQRACK-MIB`, índices `cpqRackCommo
 | Campo | OID (columna) | Notas |
 |---|---|---|
 | `modelo` | `1.3.6.1.4.1.232.22.2.5.1.1.1.6` (`cpqRackPowerSupplyPartNumber`) | DisplayString, part number (mismo caso que el ventilador: no hay nombre comercial separado) |
-| `consumo_w` | `1.3.6.1.4.1.232.22.2.5.1.1.1.10` (`cpqRackPowerSupplyCurPwrOutput`) | INTEGER, vatios de salida actual (existe también `cpqRackPowerSupplyMaxPwrOutput`, `...1.1.1.9`, para la capacidad máxima) |
-| `tipo_corriente` | **No disponible por fuente individual.** La tabla de PSU no tiene campo AC/DC. Existe `cpqRackPowerEnclosureInputPwrType` (`1.3.6.1.4.1.232.22.2.3.3.1.1.7`, enum `other/singlePhase/threePhase/directCurrent`) en la tabla `cpqRackPowerEnclosureTable`, pero esa tabla describe el tipo de alimentación de **todo el dominio/enclosure de energía** (indexada por Rack+Index propios, sin relación directa a `cpqRackPowerSupplyIndex` de una fuente en particular), no de una fuente de poder individual — no se usa como equivalente para no forzar el mapeo. |
+| `consumo_w` | `1.3.6.1.4.1.232.22.2.5.1.1.1.9` (`cpqRackPowerSupplyMaxPwrOutput`) | INTEGER, capacidad máxima en W de la fuente. El valor `-1` significa que no se reporta. No se usa `...1.10` (`CurPwrOutput`), que es la salida actual. |
+| `tipo_corriente` | Derivado de `cpqRackPowerEnclosureInputPwrType` (`1.3.6.1.4.1.232.22.2.3.3.1.1.7`): `singlePhase(2)` y `threePhase(3)` → AC; `directCurrent(4)` → DC. La tabla informa el tipo de entrada del dominio de energía, no de cada PSU. Para este perfil de un único chasis se aplica a sus fuentes del mismo rack solo si todos los dominios reportados concuerdan. Si falta el OID, es `other(1)` o hay contradicción, se conserva NULL. |
 | `estado` | `1.3.6.1.4.1.232.22.2.5.1.1.1.17` (`cpqRackPowerSupplyCondition`) | Enum `other/ok/degraded/failed` → EstadoEnum |
 
 ### 4.4 Tarjetas de red (`CPQRACK-MIB`, tabla `cpqRackNetConnectorTable`, índices `cpqRackNetConnectorRack`+`cpqRackNetConnectorChassis`+`cpqRackNetConnectorIndex`)
@@ -97,7 +97,7 @@ tarjetas de red de un servidor individual.
 
 | Campo | OID (columna) | Notas |
 |---|---|---|
-| `marca` | **No disponible como campo separado.** Igual que en la tarjeta de red del servidor: puede venir embebida en el texto de `modelo`, sin campo de fabricante aislado. |
+| `marca` | **No disponible como campo separado.** El ETL asigna `HPE` cuando el texto de `modelo` comienza explícitamente por `HPE`; de lo contrario deja `NULL`. |
 | `modelo` | `1.3.6.1.4.1.232.22.2.6.1.1.1.6` (`cpqRackNetConnectorModel`) | DisplayString, "The model name of the network connector." A diferencia del servidor (que no tenía un campo `Model` propiamente dicho, solo `Name`/`PartNumber`), aquí sí existe un campo de modelo comercial explícito. |
 | `cantidad_puertos` | **No disponible.** La tabla no tiene ningún campo de conteo de puertos por conector/módulo. |
 | `estado` | **No disponible.** A diferencia de las otras tres tablas de componentes de este mismo módulo (ventiladores, fuentes de poder, y del servidor: CPU/disco/RAM/NIC/RAID), `cpqRackNetConnectorTable` **no tiene ningún campo de condición/salud** en su `SEQUENCE` — solo `cpqRackNetConnectorPresent` (`other/absent/present`, presencia, no salud) y `cpqRackNetConnectorHasFuses` (remite a la tabla de fusibles, no es la condición del propio conector). No se fuerza `Present` como equivalente de `estado` porque presencia y condición de salud son conceptos distintos. |
@@ -146,8 +146,8 @@ servidores.
 - `generacion` de chasis (implícita en texto de `modelo`, sin campo propio — igual que el servidor)
 - `velocidad_rpm` de ventiladores del chasis (la tabla de ventiladores del enclosure no tiene
   ningún campo de velocidad/RPM, a diferencia de la del servidor)
-- `tipo_corriente` de fuentes de poder por unidad individual (existe un campo similar pero a
-  nivel de todo el dominio de energía, no por PSU — ver sección 4.3)
+- `tipo_corriente` medido por fuente individual (el valor de la ficha se deriva del dominio
+  de energía del chasis bajo la regla documentada en la sección 4.3)
 - `marca` de tarjetas de red/interconnects (embebida en texto de `modelo`, sin campo aislado)
 - `cantidad_puertos` de tarjetas de red/interconnects **como campo de `CPQRACK-MIB`**: sigue sin
   existir ese conteo en `cpqRackNetConnectorTable`. Sí es contable indirectamente a nivel de

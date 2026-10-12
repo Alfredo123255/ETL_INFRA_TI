@@ -1,7 +1,8 @@
 # ETL de infraestructura TI — entorno SNMP simulado
 
-Este repositorio consulta ocho agentes SNMPv3 simulados y crea activos de tipo servidor HPE,
-chasis HPE, storage Fibre Channel y switch ArubaOS-CX en PostgreSQL. La API del ETL corre
+Este repositorio incluye trece agentes SNMPv3 simulados: nueve HPE/Aruba y cuatro Huawei.
+El ETL crea activos HPE/Aruba y Huawei en PostgreSQL; los perfiles Huawei cubren
+servidor rack, blade, chasis E9000 y storage OceanStor Dorado. La API corre
 separada del backend Spring Boot.
 
 ## Arranque local completo (Windows)
@@ -28,19 +29,21 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
    `clave_privacidad` para agentes con claves SNMPv3 diferentes; se puede ejecutar
    de nuevo sin duplicar la columna.
 
-2. **Iniciar los ocho agentes SNMP**:
+2. **Iniciar los trece agentes SNMP**:
 
    ```powershell
    cd C:\INGESOFT\ETL_INFRA_TI
-   .\.venv\Scripts\python.exe -B .\scripts\iniciar_agentes.py
+   .\.venv\Scripts\Activate.ps1
+   .\data\start_agents.bat
    .\.venv\Scripts\python.exe -B .\data\verify_agents.py
    ```
 
-   El iniciador incluye DL380, DL360, dos blades, chasis c7000, switch Aruba y dos
-   storage. Si un puerto ya está ocupado, no lanza un segundo proceso; la
-   verificación confirma qué agente responde. Los procesos quedan en segundo
-   plano y sus registros están en `logs/agentes/`. Las credenciales y destinos
-   simulados están en `data/<agente>/README.md`.
+   El iniciador incluye DL380, DL360, tres blades, chasis c7000, switch Aruba, dos
+   storage HPE, Huawei 2288H, CH121, E9000 y OceanStor Dorado. Cada agente abre
+   una ventana; la verificación confirma qué agente responde. Las credenciales y destinos
+   simulados están en `data/<agente>/README.md`. En este equipo el iniciador usa
+   el Python de Miniconda (`%USERPROFILE%\miniconda3\python.exe`), donde está
+   instalado `snmpsim`; puede ejecutarse aunque `.venv` esté activado.
 
 3. **Configurar y arrancar la API ETL**:
 
@@ -142,8 +145,8 @@ En una lectura exitosa, el ETL compara los datos SNMP con `activo`, su subtipo y
 componentes. Actualiza únicamente los valores cambiados, conserva los campos
 administrativos del front, añade las métricas a `metrica_historica` y escribe
 `activo.ultima_actualizacion` en cada lectura exitosa, incluso sin otros cambios.
-Esta columna guarda solo la fecha de Lima; la hora exacta de la consulta se registra
-en `monitoreo_snmp.fecha_ultima_actualizacion`. Los cambios de `estado_operativo` y de `estado` en
+Esta columna y `monitoreo_snmp.fecha_ultima_actualizacion` guardan la misma marca
+UTC de la consulta exitosa. Los cambios de `estado_operativo` y de `estado` en
 componentes generan filas en `historico_estado`; los componentes nuevos o que dejan
 de reportarse también generan un evento. Un componente ausente queda con estado
 `Baja` (o `LIBRE` para un slot) y conserva su ID para el historial. Si falla SNMP
@@ -155,8 +158,9 @@ exitosa. La hora del fallo se guarda únicamente en el evento de estado.
 
 ## Datos simulados
 
-Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los ocho
-modelos. Los MIB y los documentos de mapeo de OID están en `mibs/`. Para cambiar
+Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los trece
+agentes. Los MIB y los documentos de mapeo de OID están en `mibs/`; los Huawei en
+[`mibs/huawei/MAPEO-HUAWEI.md`](mibs/huawei/MAPEO-HUAWEI.md). Para cambiar
 una simulación, edita su archivo de datos y ejecuta las dos verificaciones de la
 sección siguiente antes de usarla desde la API.
 
@@ -233,9 +237,13 @@ solo las variables personalizadas `API_HOST` y `API_PORT`.
 
 ### Agentes simulados
 
-Para los ocho agentes usa el comando del paso 2 de «Arranque local completo».
-`data/start_agents.bat` es un iniciador antiguo que solo incluye siete agentes;
-usa `scripts/iniciar_agentes.py` para incluir también el chasis.
+Para los trece agentes usa el comando del paso 2 de «Arranque local completo».
+`data/start_agents.bat` inicia los trece en ventanas visibles;
+`data/stop_agents.bat` los detiene, incluido el blade 3.
+El wrapper `data/run_responder.py` carga solamente la variación `numeric`,
+que es la única usada por los archivos `.snmprec`; los módulos opcionales
+Redis y SQL no se inicializan.
+Para verificar solo Huawei: `python -B data/verify_agents.py --solo huawei-2288h-v5-01 huawei-ch121-v5-01 huawei-e9000-01 huawei-dorado-01`.
 
 ### Llamada desde PowerShell
 
@@ -294,11 +302,15 @@ subárbol esperado y no es EndOfMibView/NoSuchObject/NoSuchInstance:
 2. Subárbol `1.3.6.1.4.1.232.22`: CHASIS.
 3. Subárbol `1.3.6.1.4.1.232.16`: STORAGE.
 4. Subárbol `1.3.6.1.4.1.232.11`: SERVIDOR.
-5. Sin evidencia o fallo de detección: DESCONOCIDO, manteniendo `ok=true` si el GET inicial funcionó.
+5. Huawei OceanStor (`34774`) con `1.3.6.1.4.1.34774.4.1.23`: STORAGE.
+6. Huawei (`2011`) con `1.3.6.1.4.1.2011.2.82.1.82.2`: CHASIS;
+   con `1.3.6.1.4.1.2011.2.235.1.1`: SERVIDOR.
+7. Sin evidencia o fallo de detección: DESCONOCIDO, manteniendo `ok=true` si el GET inicial funcionó.
 
 El orden evita clasificar el storage como servidor por sus OID compartidos.
-No se distingue blade de rack. Las bases se contrastaron con los MAPEO de chasis,
-storage y servidor, y con los `public.snmprec`.
+Después de detectar servidor Huawei, el perfil iBMC distingue blade de rack
+mediante ranura y serie de chasis; no usa usuario ni IP para clasificar.
+Las bases se contrastaron con los MAPEO y los `public.snmprec`.
 
 ### Verificación realizada en Windows
 
@@ -376,7 +388,10 @@ inicial en PostgreSQL mediante
 - `etl/snmp_cliente.py`: `ConexionSNMP` y `SesionSNMP`, con GET y recorridos
   GETBULK delimitados al subárbol; cierre del motor incluso al cancelar.
 - `etl/extraccion/servidor.py`: `extraer_servidor_hpe(conexion)` devuelve valores
-  ASN.1 por OID completo. La selección por fabricante no admite aún Huawei.
+  ASN.1 por OID completo para HPE.
+- `etl/extraccion/{servidor,chasis,storage}.py` y
+  `etl/normalizacion/{servidor,chasis,storage}.py`: perfiles HPE y Huawei por
+  tipo de activo. El chasis cruza la serie FRU del blade con el mismo datacenter.
 - `etl/normalizacion/servidor.py`: produce `activo`, `servidor`, `componentes`,
   `mediciones` y el texto original de `ubicacion_snmp`, con nombres del esquema.
 - `etl/ciclo.py`: `preparar_registro_activo` detecta el tipo por SNMP y selecciona
@@ -393,8 +408,8 @@ cantidad de núcleos de cada CPU; sobre esa capacidad se aplica el porcentaje
 SNMP (promedio de las filas de utilización válidas). Si faltan velocidades o
 núcleos válidos, no se genera una métrica de uso de CPU parcial.
 `serie` de componentes se normaliza a `numero_serial`; la serie
-del activo es `numero_serie`. La fecha `ultima_actualizacion` se asigna antes de
-la futura carga, con fecha de Lima y tipo DATE. Los campos sin fuente quedan
+del activo es `numero_serie`. `ultima_actualizacion` se asigna al guardar el
+activo con fecha y hora UTC. Los campos sin fuente quedan
 vacíos; la revisión de arquitectura de CPU no se interpreta como familia.
 
 El datacenter del registro se obtiene del clúster existente indicado en la solicitud.
@@ -430,7 +445,8 @@ SNMPv3; `clave_privacidad` para privacidad. Cuando la segunda es NULL se utiliza
 `clave` para ambas. El datacenter proviene de `clusters.datacenter`.
 
 Se admiten los perfiles simulados HPE ProLiant (rack y blade), ArubaOS-CX,
-HPE StorageWorks con arreglo Fibre Channel y HPE BladeSystem c7000. Equipos
+HPE StorageWorks con arreglo Fibre Channel, HPE BladeSystem c7000, Huawei
+FusionServer/CH121, E9000 y OceanStor Dorado. Equipos
 sin un perfil compatible se rechazan.
 
 El proceso crea el modelo en `modelos` si no existe, inserta `activo` y su
@@ -479,7 +495,16 @@ Respuestas:
 - 503: PostgreSQL no configurado, no disponible o fallo de persistencia.
 
 Las mediciones se almacenan en UTC en el TIMESTAMP sin zona de `fecha_medicion`;
-`activo.ultima_actualizacion` conserva únicamente la fecha de Lima.
+`activo.ultima_actualizacion` conserva fecha y hora UTC de la última lectura SNMP
+exitosa, igual que `monitoreo_snmp.fecha_ultima_actualizacion`. El frontend la
+muestra en hora de Lima. Una consulta SNMP fallida no modifica ninguna de las dos.
+
+Antes de iniciar esta versión del ETL y del backend, aplica una vez
+`migrations/002_activo_ultima_actualizacion_hora.sql` a la base configurada en
+`DATABASE_URL`. La migración amplía `activo.ultima_actualizacion` de `DATE` a
+`TIMESTAMP`; recupera la hora de `monitoreo_snmp` para activos vinculados. Para
+activos antiguos sin esa marca, conserva el día a las 00:00 UTC porque la hora
+original no se almacenó.
 
 Verificación de esta etapa:
 

@@ -11,6 +11,7 @@ OIDS_IDENTIDAD = {
     "numero_serie": "1.3.6.1.4.1.232.2.2.2.1.0",
     "modelo": "1.3.6.1.4.1.232.2.2.4.2.0",
     "estado_operativo": "1.3.6.1.4.1.232.6.1.3.0",
+    "nombre_so": "1.3.6.1.4.1.232.11.2.2.1.0",
     "version_so": "1.3.6.1.4.1.232.11.2.2.2.0",
     "version_firmware": "1.3.6.1.4.1.232.1.2.6.1.0",
     "consumo_electrico_w": "1.3.6.1.4.1.232.6.2.15.3.0",
@@ -45,11 +46,15 @@ OIDS_TARJETAS_RED = columnas("1.3.6.1.4.1.232.18.2.3.1.1", {
     "estado": 14, "errores_transmision": 18, "errores_recepcion": 19,
     "errores_alineamiento": 20, "errores_fcs": 21, "velocidad_bps": 33,
     "velocidad_mbps": 36, "trafico_entrada_bytes": 37,
-    "trafico_salida_bytes": 38, "modelo": 39,
+    "trafico_salida_bytes": 38, "modelo": 39, "numero_parte": 32,
+})
+OIDS_ENTIDAD_NIC = columnas("1.3.6.1.2.1.47.1.1.1.1", {
+    "clase": 5, "numero_serial": 11, "numero_parte": 13,
 })
 OIDS_VENTILADORES = columnas("1.3.6.1.4.1.232.6.2.6.7.1", {"estado": 9, "velocidad_rpm": 12})
 OIDS_FUENTES = columnas("1.3.6.1.4.1.232.6.2.9.3.1", {
-    "estado": 4, "consumo_w": 7, "modelo": 10, "numero_serial": 11,
+    "estado": 4, "capacidad_max_w": 8, "modelo": 10, "numero_serial": 11,
+    "numero_parte": 16,
 })
 OIDS_TEMPERATURA = columnas("1.3.6.1.4.1.232.6.2.6.8.1", {"ubicacion": 3, "celsius": 4})
 OIDS_IP = {"direccion": "1.3.6.1.2.1.4.20.1.1"}

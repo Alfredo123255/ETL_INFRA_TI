@@ -251,6 +251,9 @@ def test_alta_con_conexion_registra_dos_eventos(ficha, conexion, monkeypatch):
                                "Conexión SNMP vinculada al registrar el activo")
     metricas = cursor.executemany.call_args.args[1]
     assert estado[6] == conexion_ev[6] == metricas[0][5]
+    insercion_activo = next(c.args[1] for c in cursor.execute.call_args_list
+        if c.args[0].startswith("INSERT INTO activo "))
+    assert estado[6] in insercion_activo
     assert estado[6].tzinfo is None
     connection.commit.assert_called_once()
 

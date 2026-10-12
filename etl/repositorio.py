@@ -69,6 +69,8 @@ def crear_activo(conexion, ficha):
             "SWITCH":("puerto_switch","cpu","ram","fuente_poder","ventilador"),
             "CHASIS":("chasis_slot","tarjeta_red","fuente_poder","ventilador")}
         for tabla, filas in ficha["componentes"].items():
+            if tabla == "chasis_slot":
+                filas = resolver_slots_por_serie(cursor, filas, activo["ubicacion"])
             if tabla not in compatibles[activo["tipo_activo"]]:
                 raise DatosIncompletos("Tipo de componente incompatible con el activo.")
             cantidades[tabla] = len(filas)
@@ -87,16 +89,35 @@ def crear_activo(conexion, ficha):
     return activo_id, cantidades
 
 
+def resolver_slots_por_serie(cursor, slots, ubicacion):
+    """Convierte la serie de FRU Huawei al hostname del blade ya registrado."""
+    resultado = []
+    for slot in slots:
+        fila = dict(slot)
+        serie = fila.pop("serie_servidor", None)
+        if serie and fila.get("estado") != "LIBRE":
+            cursor.execute("""SELECT b.hostname FROM activo b
+                JOIN servidor v ON v.id=b.id AND v.tipo='BLADE'
+                WHERE b.numero_serie=%s AND b.ubicacion=%s""", (serie, ubicacion))
+            coincidencias = cursor.fetchall()
+            if len(coincidencias) > 1:
+                raise DatosIncompletos("La serie de un blade coincide con varios activos.")
+            fila["hostname_servidor"] = (coincidencias[0]["hostname"] if isinstance(coincidencias[0], dict)
+                                          else coincidencias[0][0]) if coincidencias else None
+        resultado.append(fila)
+    return resultado
+
+
 def vincular_slot_blade(cursor, activo_id, activo):
-    """Vincula un blade y su slot si el otro activo ya existe en el mismo clúster."""
+    """Vincula blades y slots por hostname dentro del mismo datacenter."""
     if activo["tipo_activo"] == "SERVIDOR":
         cursor.execute("SELECT tipo FROM servidor WHERE id=%s", (activo_id,))
         if cursor.fetchone()[0] != "BLADE":
             return
         cursor.execute("""SELECT s.id, s.servidor_id FROM chasis_slot s
             JOIN activo c ON c.id=s.chasis_id
-            WHERE s.hostname_servidor=%s AND c.cluster=%s AND c.ubicacion=%s
-            FOR UPDATE OF s""", (activo["hostname"],activo.get("cluster"),activo["ubicacion"]))
+            WHERE s.hostname_servidor=%s AND c.ubicacion=%s AND s.estado<>'LIBRE'
+            FOR UPDATE OF s""", (activo["hostname"],activo["ubicacion"]))
         matches=cursor.fetchall()
         if len(matches)>1:
             raise DatosIncompletos("El servidor blade coincide con varios slots de chasis.")
@@ -110,8 +131,8 @@ def vincular_slot_blade(cursor, activo_id, activo):
         cursor.execute("""SELECT s.id, b.id FROM chasis_slot s
             JOIN activo b ON b.hostname=s.hostname_servidor AND b.tipo_activo='SERVIDOR'
             JOIN servidor v ON v.id=b.id AND v.tipo='BLADE'
-            WHERE s.chasis_id=%s AND b.cluster=%s AND b.ubicacion=%s
-            FOR UPDATE OF s, b""", (activo_id,activo.get("cluster"),activo["ubicacion"]))
+            WHERE s.chasis_id=%s AND b.ubicacion=%s AND s.estado<>'LIBRE'
+            FOR UPDATE OF s, b""", (activo_id,activo["ubicacion"]))
         for slot_id,servidor_id in cursor.fetchall():
             cursor.execute("UPDATE servidor SET id_chasis_slot=%s WHERE id=%s AND id_chasis_slot IS NULL",
                 (slot_id,servidor_id))

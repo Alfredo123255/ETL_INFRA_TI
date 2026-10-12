@@ -20,7 +20,7 @@ HEADERS = {"X-API-Key": "api-integracion"}
 PATH = "/api/etl/crear-activo"
 DATACENTER, CLUSTER = "DC-LAB-LOCAL", "CLUSTER-LAB-LOCAL"
 # El chasis primero, para que los blades se enlacen a sus slots.
-ORDEN = ["hpe-c7000-01", "hpe-dl380-01", "hpe-dl360-01", "hpe-bl460c-01", "hpe-bl460c-02",
+ORDEN = ["hpe-c7000-01", "hpe-dl380-01", "hpe-dl360-01", "hpe-bl460c-01", "hpe-bl460c-02", "hpe-bl460c-03",
          "hpe-storage-fc-01", "hpe-storage-fc-02", "aruba-cx-sw01"]
 TABLAS = ("historico_estado, metrica_historica, monitoreo_snmp, activo, clusters, datacenters, modelos")
 
@@ -149,6 +149,8 @@ def test_iteracion_periodica_guarda_metricas_y_conserva_eventos(altas, base, cli
         cur.execute("SELECT ultima_actualizacion, xmin::text FROM activo WHERE id=%s", (activo_id,))
         fecha_activo, version_despues = cur.fetchone()
         assert fecha_activo is not None
+        cur.execute("SELECT fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (base[nombre],))
+        assert fecha_activo == cur.fetchone()[0]
         assert version_despues != version_antes
 
 
@@ -182,12 +184,12 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         cur.execute("UPDATE monitoreo_snmp SET ip_gestion='127.0.0.1:1' WHERE id=%s", (conexion_id,))
     try:
         fallo = asyncio.run(ejecutar_iteracion(config, conexion_id))
-        assert fallo["ok"] is False and fallo["eventos"] == 1
+        assert fallo["ok"] is False and fallo["eventos"] == 2
         with _conectar() as c, c.cursor() as cur:
             cur.execute("SELECT estado_conexion, fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
             assert cur.fetchone() == ("Sin conexión", fecha_conexion)
-            cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
-            assert cur.fetchone()[0] == fecha_activo
+            cur.execute("SELECT estado_operativo, ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            assert cur.fetchone() == ("Degradado", fecha_activo)
             cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
             assert cur.fetchone()[0] == metricas_antes
         assert registrar_fallo(config, leer_conexion(config, conexion_id), "timeout")["eventos"] == 0
@@ -195,10 +197,15 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         with _conectar() as c, c.cursor() as cur:
             cur.execute("UPDATE monitoreo_snmp SET ip_gestion=%s WHERE id=%s", (destino, conexion_id))
     recuperacion = asyncio.run(ejecutar_iteracion(config, conexion_id))
-    assert recuperacion["ok"] and recuperacion["eventos"] == 1
+    assert recuperacion["ok"] and recuperacion["eventos"] == 2
     with _conectar() as c, c.cursor() as cur:
-        cur.execute("SELECT campo, valor_nuevo FROM historico_estado WHERE activo_id=%s ORDER BY id DESC LIMIT 2", (activo_id,))
-        assert cur.fetchall() == [("estado_conexion", "Activo"), ("estado_conexion", "Sin conexión")]
+        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s", (activo_id,))
+        assert cur.fetchone()[0] == altas["aruba-cx-sw01"]["estado_operativo"]
+        cur.execute("SELECT campo, valor_nuevo FROM historico_estado WHERE activo_id=%s ORDER BY id DESC LIMIT 4", (activo_id,))
+        assert cur.fetchall() == [
+            ("estado_conexion", "Activo"), ("estado_operativo", altas["aruba-cx-sw01"]["estado_operativo"]),
+            ("estado_operativo", "Degradado"), ("estado_conexion", "Sin conexión"),
+        ]
 
 
 def test_componentes_nuevos_y_ausentes_y_campos_del_front(altas, base, cliente):

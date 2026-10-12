@@ -49,10 +49,18 @@ def test_ficha_real_simulada(agente, cpus, memorias, discos, tarjetas, uso):
     assert len(c["ram"]) == memorias
     assert len(c["disco"]) == discos
     assert len(c["tarjeta_red"]) == tarjetas
+    assert {tarjeta["marca"] for tarjeta in c["tarjeta_red"]} == {"HPE"}
+    assert {tarjeta["numero_serial"] for tarjeta in c["tarjeta_red"]} == (
+        {"SIM-DL380-NIC-001", "SIM-DL380-NIC-002"} if cpus == 2
+        else {"SIM-DL360-NIC-001"})
     assert c["ram"][0]["numero_serial"].startswith("MEM")
     assert c["disco"][0]["numero_serial"].startswith("SN")
     assert c["controladora_raid"][0]["numero_serial"]
     assert c["cpu"][0]["cantidad_hilos"] == c["cpu"][0]["cantidad_nucleos"] * 2
+    assert c["cpu"][0]["familia"] == ("Xeon Gold" if cpus == 2 else "Xeon Silver")
+    assert {ram["generacion"] for ram in c["ram"]} == {"DDR4"}
+    assert {fuente["tipo_corriente"] for fuente in c["fuente_poder"]} == {"AC"}
+    assert {fuente["consumo_w"] for fuente in c["fuente_poder"]} == ({800} if cpus == 2 else {500})
     assert c["cpu"][0]["cache_l1_mb"] == (Decimal(1) if cpus == 2 else Decimal("0.625"))
     assert c["tarjeta_red"][0]["puertos"][0]["mac_address"].count(":") == 5
     assert "cpuTotalGhz" not in ficha["servidor"]
@@ -65,12 +73,39 @@ def test_tablas_y_estados_especificos():
     c = ficha["componentes"]
     assert c["ram"][-1]["estado"] == "Degradado"
     assert c["fuente_poder"][-1]["estado"] == "Apagado"
+    assert c["fuente_poder"][-1]["consumo_w"] == 800
     assert c["controladora_raid"][0]["modelo"] == "p408i-a"
     assert c["controladora_raid"][0]["raid"] == "RAID10"
     assert c["tarjeta_red"][1]["puertos"][0]["velocidad"] == "10000 Mbps"
     assert ficha["activo"]["temperatura"] == 22
     assert ficha["servidor"]["ip_sistema_operativo"] == "10.10.12.11"
+    assert ficha["servidor"]["version_so"] == "Microsoft Windows Server 2019 Standard 10.0.17763"
     assert next(m["valor"] for m in ficha["mediciones"] if m["nombre_metrica"] == "cpu_uso_ghz") == Decimal("35.28")
+
+
+@pytest.mark.parametrize("agente,esperado", [
+    ("hpe-dl360-01", "Red Hat Enterprise Linux Server 8.6 (Ootpa)"),
+    ("hpe-bl460c-01", "Microsoft Windows Server 2022 Standard 10.0.20348"),
+    ("hpe-bl460c-02", "Ubuntu 22.04.3 LTS (Jammy Jellyfish)"),
+    ("hpe-bl460c-03", "Ubuntu 22.04.3 LTS (Jammy Jellyfish)"),
+])
+def test_nombre_y_version_del_so_para_servidor_y_blade(agente, esperado):
+    ficha = normalizar_servidor_hpe(registros(agente), fecha_actualizacion=FECHA, tipo="AUTO")
+    assert ficha["servidor"]["version_so"] == esperado
+
+
+def test_nic_sin_entidad_o_con_parte_ambigua_no_recibe_serial_inventado():
+    datos = registros("hpe-dl380-01")
+    for oid in list(datos):
+        if oid.startswith("1.3.6.1.2.1.47.1.1.1.1."):
+            del datos[oid]
+    ficha = normalizar_servidor_hpe(datos, fecha_actualizacion=FECHA)
+    assert {t["numero_serial"] for t in ficha["componentes"]["tarjeta_red"]} == {None}
+
+    datos = registros("hpe-dl380-01")
+    datos["1.3.6.1.2.1.47.1.1.1.1.13.1002"] = datos["1.3.6.1.2.1.47.1.1.1.1.13.1001"]
+    ficha = normalizar_servidor_hpe(datos, fecha_actualizacion=FECHA)
+    assert ficha["componentes"]["tarjeta_red"][0]["numero_serial"] is None
 
 
 @pytest.mark.parametrize("porcentaje,uso_esperado", [(0, "0"), (25, "16"), (100, "64")])
@@ -171,9 +206,9 @@ async def test_get_omite_objetos_no_disponibles(monkeypatch, sesion):
         assert await cliente.obtener([oid]) == {}
 
 
-async def test_extraccion_rechaza_huawei():
+async def test_extraccion_rechaza_fabricante_sin_perfil():
     with pytest.raises(PerfilNoSoportado):
-        await extraccion.extraer_servidor(CONEXION, "Huawei")
+        await extraccion.extraer_servidor(CONEXION, "Cisco")
 
 
 async def test_extraccion_reutiliza_sesion_y_filtra_columnas(monkeypatch):
@@ -187,7 +222,8 @@ async def test_extraccion_reutiliza_sesion_y_filtra_columnas(monkeypatch):
     resultado = await extraccion.extraer_servidor_hpe(CONEXION)
     assert "1.3.6.1.4.1.232.3.2.5.1.1.51.1.1" in resultado
     assert "1.3.6.1.4.1.232.3.2.5.1.1.25.1.1" not in resultado
-    assert cliente.recorrer.await_count == 12
+    assert "1.3.6.1.2.1.47.1.1.1.1.11.1001" in resultado
+    assert cliente.recorrer.await_count == 13
     contexto.__exit__.assert_called_once()
 
 

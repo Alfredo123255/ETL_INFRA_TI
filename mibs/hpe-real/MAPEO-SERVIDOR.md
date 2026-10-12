@@ -72,7 +72,7 @@ realidad con el agente arriba.
 | `ram_uso_gb` | Derivado: `cpqHoPhysicalMemorySize` − `cpqHoPhysicalMemoryFree` (`1.3.6.1.4.1.232.11.2.13.2`, MB) | CPQHOST-MIB | Resta de dos OID, en MB → convertir a GB. Se guarda con el nombre de métrica `ram_uso_gb`. |
 | `capacidadDiscosGb` | Suma de `cpqDaLogDrvSize` (`1.3.6.1.4.1.232.3.2.3.1.1.9`, MB) por cada unidad lógica del `cpqDaLogDrvTable` | CPQIDA-MIB | Sumatoria de la ETL sobre todas las filas, no un escalar único |
 | `ip_sistema_operativo` | `1.3.6.1.2.1.4.20.1.1` (`ipAdEntAddr`), tabla `ipAddrTable` | **IP-MIB (estándar, RFC 1213/4293)**. El único campo de IP en `CPQHOST-MIB` es `cpqHoClientIpAddress`, que es la IP de una *consola de gestión remota* registrada, no la IP propia del servidor — por eso se usa el `IP-MIB` estándar en su lugar. `ipAdEntIfIndex` (`...4.20.1.2`) referencia el índice de interfaz que porta esa IP; en los servidores rack (`hpe-dl380-01`/`hpe-dl360-01`) se usa el índice de `cpqNicIfPhysAdapterTable` (sección 4.6) ya que este agente no expone `IF-MIB` propio, y en los blades (`hpe-bl460c-01`/`hpe-bl460c-02`, sin tabla de NIC propia — ver sección "Servidores tipo BLADE") se deja `1` como referencia genérica. |
-| `version_so` | `1.3.6.1.4.1.232.11.2.2.2` (`cpqHoVersion`) | CPQHOST-MIB | DisplayString, "The version of the host OS." Complementario: `cpqHoName` (`...11.2.2.1`) da el nombre del SO y `cpqHosysDescr` (`...11.2.2.13`) da el equivalente a `sysDescr`. |
+| `version_so` | `1.3.6.1.4.1.232.11.2.2.1` (`cpqHoName`) + `1.3.6.1.4.1.232.11.2.2.2` (`cpqHoVersion`) | CPQHOST-MIB | Se guarda nombre y versión juntos en la única columna `servidor.version_so`, por ejemplo `Ubuntu 22.04.3 LTS (Jammy Jellyfish)`. Si la versión ya empieza con el nombre, no se duplica. `cpqHosysDescr` (`...11.2.2.13`) da el equivalente a `sysDescr`. |
 | `version_firmware` | `1.3.6.1.4.1.232.1.2.6.1` (`cpqSeSysRomVer`) | CPQSTDEQ-MIB | DisplayString, "System ROM version information." Es la versión de ROM/BIOS del sistema en general (grupo `cpqSeRom`), no de un componente específico. Se revisaron los 7 módulos ya usados más `cpqsm2` y `cpqrecov` buscando un OID de firmware a nivel de servidor completo; el resto de campos de firmware encontrados son por componente (ej. `cpqHeFltTolPowerSupplyFirmwareRev`, `cpqDaCntlrOptionRomRev`), no equivalentes a este. La fecha de publicación del firmware viene incluida como texto dentro de este mismo valor (ej. `"U30 v2.78 (03/22/2023)"`) — no existe un OID de fecha aparte, así que no hace falta (ni es posible) separarlas; ver sección 5 para el detalle de por qué. |
 
 ## 4. Componentes
@@ -131,7 +131,7 @@ realidad con el agente arriba.
 | Campo | OID (columna) | Notas |
 |---|---|---|
 | `modelo` | `1.3.6.1.4.1.232.6.2.9.3.1.10` (`cpqHeFltTolPowerSupplyModel`) | DisplayString |
-| `consumo_w` | `1.3.6.1.4.1.232.6.2.9.3.1.7` (`cpqHeFltTolPowerSupplyCapacityUsed`) | INTEGER, vatios en uso actual (existe también `cpqHeFltTolPowerSupplyCapacityMaximum`, `...1.8`, para la capacidad máxima) |
+| `consumo_w` | `1.3.6.1.4.1.232.6.2.9.3.1.8` (`cpqHeFltTolPowerSupplyCapacityMaximum`) | INTEGER, capacidad nominal/máxima en W de cada fuente. Si falta o es inválida, se extrae del modelo cuando contiene un valor explícito como `800W`. No se usa `...1.7` (`CapacityUsed`), que es la potencia actual. |
 | `tipo_corriente` | **No disponible.** No existe un campo AC/DC explícito en la tabla; sólo `cpqHeFltTolPowerSupplyMainVoltage` (voltaje de entrada en volts), del cual no se puede inferir con certeza AC vs DC sin asumir umbrales arbitrarios. |
 | `estado` | `1.3.6.1.4.1.232.6.2.9.3.1.4` (`cpqHeFltTolPowerSupplyCondition`) | Enum `other/ok/degraded/failed` → EstadoEnum |
 
@@ -162,7 +162,7 @@ En los agentes simulados: `hpe-dl380-01` tiene dos tarjetas distintas (`Slot=0` 
 
 | Campo | OID (columna) | Notas |
 |---|---|---|
-| `marca` (tarjeta) | **No disponible como campo separado.** `cpqNicIfPhysAdapterName` (DisplayString libre, `1.3.6.1.4.1.232.18.2.3.1.1.39`) suele incluir el fabricante en el texto (ej. "HPE Ethernet 1Gb 4-port 331i"), pero no hay un campo de marca aislado. |
+| `marca` (tarjeta) | **No disponible como campo separado.** `cpqNicIfPhysAdapterName` (DisplayString libre, `1.3.6.1.4.1.232.18.2.3.1.1.39`) suele incluir el fabricante en el texto (ej. "HPE Ethernet 1Gb 4-port 331i"). El ETL asigna `HPE` solo cuando el nombre comienza explícitamente por `HPE`; de lo contrario deja `NULL`. |
 | `modelo` (tarjeta) | `1.3.6.1.4.1.232.18.2.3.1.1.39` (`cpqNicIfPhysAdapterName`) — alternativa: `cpqNicIfPhysAdapterPartNumber` (`...1.1.32`) | Se usa `Name` como texto de modelo comercial; `PartNumber` es el part number HPE. Si la tarjeta tiene más de un puerto simulado, todas sus filas comparten el mismo `Name`/`PartNumber` (es el mismo hardware). |
 | `cantidad_puertos` (tarjeta) | **Derivado, no es un único OID.** Se cuenta la cantidad de filas de `cpqNicIfPhysAdapterTable` que comparten el mismo `cpqNicIfPhysAdapterSlot` (ver agrupación arriba). `cpqNicIfLogMapAdapterCount` (`1.3.6.1.4.1.232.18.2.2.1.1.5`) NO sirve para esto: cuenta adaptadores agrupados en un *team* lógico (bonding/teaming), un concepto distinto al de puertos físicos de una misma tarjeta. |
 | `numero_puerto` (puerto) | `1.3.6.1.4.1.232.18.2.3.1.1.10` (`cpqNicIfPhysAdapterPort`) | INTEGER, "The port number of the interface for multi-port NICs." `-1` si no se pudo determinar. |
@@ -218,10 +218,20 @@ OID real, simplemente no se cargó una fila de datos para ellos, por alcance): `
   columna (`cpqSeCpuCacheSize` filtrado por nivel), no tres OID distintos
 - `marca` de discos (sólo texto de modelo, sin campo de fabricante aislado)
 - `velocidad_rpm` de discos como número real (sólo hay un enum categórico de rangos)
-- `generacion` de RAM (tecnología legacy, no DDR3/4/5)
+- `generacion` de RAM no tiene OID directo; el ETL la deriva del número de parte cuando
+  figura en el catálogo verificado, o de un texto DDR explícito. Modelos desconocidos quedan NULL.
 - `modelo` de ventiladores (sin campo de modelo comercial en el MIB)
-- `tipo_corriente` de fuentes de poder (AC/DC no está expuesto)
-- `marca` de tarjetas de red (embebida en texto de `modelo`, sin campo aislado)
+- `tipo_corriente` de fuentes de poder como OID directo (AC/DC no está expuesto); el ETL
+  clasifica números de parte verificados del OID `cpqHeFltTolPowerSupplySparePartNum`.
+- `marca` de tarjetas de red como OID aislado (se deriva solo del prefijo explícito de `modelo`)
+- `numero_serial` de NIC Ethernet en `CPQNIC-MIB`: expone MAC y número de parte, pero no
+  serial de la tarjeta. Los agentes simulados complementan esa tabla con módulos de
+  `ENTITY-MIB` (`entPhysicalClass=module(9)`, `entPhysicalSerialNum` columna 11 y
+  `entPhysicalModelName` columna 13); el ETL relaciona ambas tablas solo cuando el
+  número de parte identifica una única tarjeta y una única entidad. Los seriales
+  `SIM-*` son datos de prueba, no identificadores de hardware real. Si un agente
+  real no expone la entidad o la relación es ambigua, el campo queda NULL. MAC y
+  número de parte no sustituyen al serial.
 - fecha de actualización/publicación de `version_firmware` como campo aislado. Se revisaron los
   mismos 9 módulos (los 7 base + `cpqsm2` + `cpqrecov`) y ninguno expone una fecha de firmware
   propia: `cpqSiQuickTestRomDate` (CPQSINFO-MIB) es la fecha de un ROM de autodiagnóstico rápido

@@ -22,6 +22,7 @@ def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
     # metrica_historica e historico_estado usan TIMESTAMP sin zona: se almacena UTC y la misma
     # marca para las métricas y los eventos de un mismo alta.
     marca_tiempo = datetime.now(timezone.utc).replace(tzinfo=None)
+    ficha["activo"]["ultima_actualizacion"] = marca_tiempo
     metricas = construir_metricas(ficha["activo"]["tipo_activo"], ficha, marca_tiempo)
     eventos = 0
     try:

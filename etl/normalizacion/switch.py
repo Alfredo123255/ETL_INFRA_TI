@@ -6,6 +6,7 @@ from etl.normalizacion.reglas import mhz_a_ghz, kb_a_gb, dividir
 from etl.normalizacion.estados import CONDICION_HPE, ESTADO_RAM_HPE, normalizar_estado
 from etl.oids.servidor import OIDS_CPU, OIDS_CACHE, OIDS_RAM
 from etl.normalizacion.servidor import MARCAS_CPU
+from etl.normalizacion.inferencias import familia_cpu, generacion_ram, corriente_desde_voltaje
 
 P = "1.3.6.1.4.1.47196.4.1.1.3"
 MOD = P + ".11.6.1.1"
@@ -14,6 +15,7 @@ FAN = P + ".11.5.1.1"
 TEMP = P + ".11.3.1.1"
 IF = "1.3.6.1.2.1.2.2.1"
 IFX = "1.3.6.1.2.1.31.1.1.1"
+HPICF_PSU_VOLTAGE = "1.3.6.1.4.1.11.2.14.11.5.1.55.1.1.1.5"
 
 def estado_texto(value):
     value = (texto(value) or "").lower()
@@ -52,10 +54,18 @@ def normalizar_switch(datos, *, fecha_actualizacion):
             "velocidad_rpm": numero(row.get("rpm")),
             "estado": {4:"Encendido",5:"Apagado",1:"Degradado",2:"Apagado",3:"Degradado"}.get(state,"Degradado")})
     fuentes = []
-    for _, row in filas(datos, {"modelo": PSU+".5", "serie": PSU+".6", "consumo": PSU+".7", "estado": PSU+".11"}):
+    psus = filas(datos, {"modelo": PSU+".5", "serie": PSU+".6", "capacidad_max_w": PSU+".8", "estado": PSU+".11"})
+    # La tabla HPICF antigua usa solo bay, mientras ArubaOS-CX usa grupo y
+    # ranura. Se aplica el dato solo si la ranura identifica una PSU única.
+    ranuras = [indice.split(".")[-1] for indice,_ in psus]
+    for indice, row in psus:
         state = numero(row.get("estado"))
+        ranura = indice.split(".")[-1]
+        voltaje = datos.get(f"{HPICF_PSU_VOLTAGE}.{ranura}") if ranuras.count(ranura) == 1 else None
+        capacidad = numero(row.get("capacidad_max_w"))
         fuentes.append({"numero_serial": texto(row.get("serie")), "modelo": texto(row.get("modelo")),
-            "consumo_w": numero(row.get("consumo")), "tipo_corriente": None,
+            "consumo_w": capacidad if capacidad is not None and capacidad > 0 else None,
+            "tipo_corriente": corriente_desde_voltaje(texto(voltaje)),
             "estado": "Encendido" if state == 1 else "Degradado" if state in (7,10,11) else "Apagado"})
     temperatures = filas(datos, {"nombre": TEMP+".5", "valor": TEMP+".7"})
     temp = next((dividir(numero(r.get("valor")),1000) for _,r in temperatures
@@ -70,7 +80,8 @@ def normalizar_switch(datos, *, fecha_actualizacion):
     for indice,r in filas(datos,OIDS_CPU):
         nucleos=numero(r.get("cantidad_nucleos"))
         threads=numero(r.get("hilos_por_nucleo"))
-        entry={"numero_serial":texto(r.get("numero_serial")),"familia":None,
+        entry={"numero_serial":texto(r.get("numero_serial")),
+            "familia":familia_cpu(texto(r.get("modelo"))),
             "marca":MARCAS_CPU.get(numero(r.get("marca"))),"modelo":texto(r.get("modelo")),
             "velocidad_ghz":mhz_a_ghz(numero(r.get("velocidad_mhz"))),
             "cantidad_nucleos":nucleos,
@@ -84,7 +95,8 @@ def normalizar_switch(datos, *, fecha_actualizacion):
     ram=[]
     for _,r in filas(datos,OIDS_RAM):
         ram.append({"numero_serial":texto(r.get("numero_serial")),"marca":texto(r.get("marca")),
-            "modelo":texto(r.get("modelo")),"generacion":None,"velocidad_mhz":numero(r.get("velocidad_mhz")),
+            "modelo":texto(r.get("modelo")),
+            "generacion":generacion_ram(texto(r.get("modelo"))),
             "capacidad_gb":kb_a_gb(numero(r.get("capacidad_kb"))),
             "estado":normalizar_estado(numero(r.get("estado")),ESTADO_RAM_HPE)})
     system_info=P+".22.1.0.1.1"

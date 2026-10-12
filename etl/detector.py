@@ -23,6 +23,12 @@ async def detectar_tipo(sys_object_id, existe_subarbol):
     try:
         if empresa(sys_object_id) == 47196:
             return "SWITCH" if await existe_subarbol("1.3.6.1.4.1.47196") else "DESCONOCIDO"
+        if empresa(sys_object_id) == 34774:
+            return "STORAGE" if await existe_subarbol("1.3.6.1.4.1.34774.4.1.23") else "DESCONOCIDO"
+        if empresa(sys_object_id) == 2011:
+            if await existe_subarbol("1.3.6.1.4.1.2011.2.82.1.82.2"):
+                return "CHASIS"
+            return "SERVIDOR" if await existe_subarbol("1.3.6.1.4.1.2011.2.235.1.1") else "DESCONOCIDO"
         for root, kind in REGLAS:
             if await existe_subarbol(root):
                 return kind

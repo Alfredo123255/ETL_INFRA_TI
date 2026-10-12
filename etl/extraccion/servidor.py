@@ -1,8 +1,9 @@
 """Extracción de servidores por fabricante, reutilizable desde API y ciclos ETL."""
 from etl.detector import fabricante as reconocer_fabricante
 from etl.errores import PerfilNoSoportado
-from etl.oids.servidor import OIDS_IDENTIDAD, TABLAS_HPE
+from etl.oids.servidor import OIDS_IDENTIDAD, TABLAS_HPE, OIDS_ENTIDAD_NIC
 from etl.snmp_cliente import SesionSNMP
+from etl.oid_util import leer_perfil
 
 async def extraer_servidor_hpe(conexion):
     """Devuelve OID completo -> valor ASN.1 sin convertir unidades ni estados."""
@@ -16,11 +17,23 @@ async def extraer_servidor_hpe(conexion):
             valores = await sesion.recorrer(raiz)
             prefijos = tuple(oid + "." for oid in columnas.values())
             datos.update((oid, valor) for oid, valor in valores.items() if oid.startswith(prefijos))
+        # ENTITY-MIB es opcional. Solo se conservan las columnas necesarias
+        # para correlacionar un módulo físico con la NIC de CPQNIC-MIB.
+        raiz = next(iter(OIDS_ENTIDAD_NIC.values())).rsplit(".", 1)[0]
+        valores = await sesion.recorrer(raiz)
+        prefijos = tuple(oid + "." for oid in OIDS_ENTIDAD_NIC.values())
+        datos.update((oid, valor) for oid, valor in valores.items() if oid.startswith(prefijos))
         return datos
 
 async def extraer_servidor(conexion, fabricante):
-    extractores = {"HPE": extraer_servidor_hpe}
+    extractores = {"HPE": extraer_servidor_hpe, "Huawei": extraer_servidor_huawei}
     extractor = extractores.get(fabricante)
     if extractor is None:
         raise PerfilNoSoportado("Fabricante de servidor sin perfil de extracción implementado.")
     return await extractor(conexion)
+
+
+async def extraer_servidor_huawei(conexion):
+    return await leer_perfil(conexion, escalares=("1.3.6.1.2.1.1.1.0",), subarboles=(
+        "1.3.6.1.4.1.2011.2.235.1.1", "1.3.6.1.2.1.2.2.1",
+        "1.3.6.1.2.1.31.1.1.1"))

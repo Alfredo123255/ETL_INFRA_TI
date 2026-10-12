@@ -9,6 +9,7 @@ invocar el punto de entrada real, y no cambia ningun otro comportamiento.
 """
 import asyncio
 import sys
+from pathlib import Path
 
 try:
     asyncio.get_event_loop()
@@ -18,4 +19,10 @@ except RuntimeError:
 from snmpsim.commands.responder import main
 
 if __name__ == "__main__":
+    # Limit variation modules to those used by our .snmprec files. Without
+    # this, snmpsim also initializes optional Redis/SQL modules and prints
+    # misleading configuration errors for services we do not use.
+    sys.argv.extend(
+        ["--variation-modules-dir", str(Path(__file__).resolve().parent / "variation")]
+    )
     sys.exit(main())

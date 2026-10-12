@@ -1,7 +1,7 @@
 """Comprueba la transición por fallo SNMP sin necesitar un agente en ejecución."""
 import os
 import asyncio
-from datetime import date, datetime
+from datetime import datetime
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -23,7 +23,7 @@ def test_fallo_no_mueve_fechas_y_registra_una_sola_transicion():
     if "test" not in urlparse(url).path.lower() or url == os.environ.get("DATABASE_URL", "").strip():
         pytest.fail("TEST_DATABASE_URL debe apuntar exclusivamente a una base de prueba")
     marca = "ETL-FALLO-" + uuid4().hex[:12]
-    fecha_activo = date(2025, 1, 2)
+    fecha_activo = datetime(2025, 1, 2, 0, 0)
     fecha_conexion = datetime(2025, 1, 2, 3, 4, 5)
     activo_id = conexion_id = None
     try:
@@ -41,17 +41,20 @@ def test_fallo_no_mueve_fechas_y_registra_una_sola_transicion():
         referencia = ConexionMonitoreo(conexion_id, activo_id, "127.0.0.1:1",
                                        "test", SecretStr("test"), None)
         config = Configuracion(SecretStr("test"), database_url=SecretStr(url))
-        assert registrar_fallo(config, referencia, "timeout")["eventos"] == 1
+        assert registrar_fallo(config, referencia, "timeout")["eventos"] == 2
         assert registrar_fallo(config, referencia, "timeout")["eventos"] == 0
         with psycopg2.connect(url) as db, db.cursor() as cur:
-            cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
-            assert cur.fetchone()[0] == fecha_activo
+            cur.execute("SELECT estado_operativo,ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            assert cur.fetchone() == ("Degradado", fecha_activo)
             cur.execute("""SELECT estado_conexion,fecha_ultima_actualizacion
                 FROM monitoreo_snmp WHERE id=%s""", (conexion_id,))
             assert cur.fetchone() == ("Sin conexión", fecha_conexion)
             cur.execute("""SELECT campo,valor_nuevo,count(*) FROM historico_estado
                 WHERE activo_id=%s GROUP BY campo,valor_nuevo""", (activo_id,))
-            assert cur.fetchall() == [("estado_conexion", "Sin conexión", 1)]
+            assert sorted(cur.fetchall()) == [
+                ("estado_conexion", "Sin conexión", 1),
+                ("estado_operativo", "Degradado", 1),
+            ]
             cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Inactivo' WHERE id=%s", (conexion_id,))
         assert leer_conexion(config, conexion_id) is None
         assert conexiones_programadas(config, conexion_id) == []

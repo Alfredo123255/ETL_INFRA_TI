@@ -3,7 +3,7 @@
 No programa ciclos ni guarda credenciales. La API entrega la ficha preparada a
 carga.py para persistir el registro inicial en una sola transacción.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from etl.errores import PerfilNoSoportado, DatosIncompletos
 from etl.extraccion.servidor import extraer_servidor
 from etl.normalizacion.servidor import normalizar_servidor
@@ -18,15 +18,14 @@ async def preparar_registro_servidor(conexion, config, *, tipo="AUTO", ip_gestio
             conexion.clave, conexion.clave_privacidad, config)
     if not prueba["ok"]:
         raise ErrorExtraccion(prueba["error_tipo"])
-    if prueba["tipo_detectado"] != "SERVIDOR" or prueba["fabricante"] != "HPE":
-        raise PerfilNoSoportado("El registro inicial solo admite servidores HPE con perfil compatible.")
+    if prueba["tipo_detectado"] != "SERVIDOR" or prueba["fabricante"] not in ("HPE", "Huawei"):
+        raise PerfilNoSoportado("No hay perfil de servidor para este fabricante.")
     datos = await extraer_servidor(conexion, prueba["fabricante"])
     if str(datos.get(OIDS_IDENTIDAD["sys_object_id"])) != prueba["sys_object_id"]:
         raise DatosIncompletos("La identidad del equipo cambió durante la extracción.")
-    # Fecha de Lima antes de la carga; schema.sql almacena DATE.
-    fecha = datetime.now(timezone(timedelta(hours=-5))).date()
+    fecha = datetime.now(timezone.utc).replace(tzinfo=None)
     ficha = normalizar_servidor(datos, fabricante=prueba["fabricante"],
-        fecha_actualizacion=fecha, tipo=tipo)
+                               fecha_actualizacion=fecha, tipo=tipo)
     ficha["activo"]["ip_gestion"] = ip_gestion or (
         f"[{conexion.host}]:{conexion.puerto}" if ":" in conexion.host
         else f"{conexion.host}:{conexion.puerto}")
@@ -43,7 +42,7 @@ async def preparar_registro_activo(conexion, config, *, ip_gestion=None):
     if tipo == "SERVIDOR":
         return await preparar_registro_servidor(conexion,config,ip_gestion=ip_gestion,prueba=prueba)
     if (tipo == "SWITCH" and prueba["fabricante"] != "HPE Aruba Networking") or \
-       (tipo in ("STORAGE","CHASIS") and prueba["fabricante"] != "HPE"):
+       (tipo in ("STORAGE","CHASIS") and prueba["fabricante"] not in ("HPE", "Huawei")):
         raise PerfilNoSoportado("No hay perfil de registro para este fabricante.")
     from etl.extraccion.switch import extraer_switch
     from etl.extraccion.storage import extraer_storage
@@ -57,11 +56,11 @@ async def preparar_registro_activo(conexion, config, *, ip_gestion=None):
     if tipo not in perfiles:
         raise PerfilNoSoportado("El tipo de equipo no tiene perfil de registro implementado.")
     extractor, normalizador=perfiles[tipo]
-    datos=await extractor(conexion)
+    datos=await extractor(conexion, prueba["fabricante"]) if tipo in ("STORAGE", "CHASIS") else await extractor(conexion)
     if str(datos.get(OIDS_IDENTIDAD["sys_object_id"])) != prueba["sys_object_id"]:
         raise DatosIncompletos("La identidad del equipo cambió durante la extracción.")
-    fecha=datetime.now(timezone(timedelta(hours=-5))).date()
-    ficha=normalizador(datos,fecha_actualizacion=fecha)
+    fecha=datetime.now(timezone.utc).replace(tzinfo=None)
+    ficha=normalizador(datos,fecha_actualizacion=fecha,fabricante=prueba["fabricante"]) if tipo in ("STORAGE", "CHASIS") else normalizador(datos,fecha_actualizacion=fecha)
     ficha["activo"]["ip_gestion"]=ip_gestion or (
         f"[{conexion.host}]:{conexion.puerto}" if ":" in conexion.host
         else f"{conexion.host}:{conexion.puerto}")

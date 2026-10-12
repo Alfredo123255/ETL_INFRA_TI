@@ -64,7 +64,7 @@ Esta revisión verifica definiciones de objetos en los archivos locales, no resp
 
 ## Ajustes de significado pendientes
 
-1. `fuentes_poder.consumo_w` figura como consumo nominal en el documento. Debe decidirse si representa consumo, potencia suministrada instantánea o capacidad máxima: son magnitudes diferentes.
+1. `fuentes_poder.consumo_w` se usa para la capacidad nominal/máxima de cada fuente (`arubaWiredPSUMaximumPower`). La potencia instantánea es otra magnitud y no se guarda en ese campo.
 2. `puerto_switch.estado` admite Encendido/Apagado/Degradado/Baja, pero la descripción habla de up/down/libre. Separar conceptualmente enlace y disponibilidad: un puerto down puede estar reservado o conectado a un equipo apagado.
 3. No reutilizar los valores numéricos de los enums HPE para Aruba. Normalizar cada objeto según su definición.
 4. La ausencia de información física de CPU/RAM debe mostrarse como sin datos, sin crear componentes ficticios para satisfacer los campos obligatorios de estado.
