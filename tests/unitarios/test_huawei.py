@@ -167,3 +167,32 @@ def test_tipo_de_corriente_oceanstor_respeta_valores_del_mib():
     fuentes = normalizar_storage_huawei(datos, fecha_actualizacion=FECHA)["componentes"]["fuente_poder"]
     assert fuentes[0]["tipo_corriente"] == "DC"
     assert fuentes[1]["tipo_corriente"] is None  # HV no existe en el enum de la BD.
+
+
+def test_segundas_instancias_huawei_son_independientes_y_blade_coincide_con_chasis():
+    rack = normalizar_servidor_huawei(captura("huawei-2288h-v5-02"), fecha_actualizacion=FECHA)
+    blade = normalizar_servidor_huawei(captura("huawei-ch121-v5-02"), fecha_actualizacion=FECHA)
+    chasis = normalizar_chasis_huawei(captura("huawei-e9000-02"), fecha_actualizacion=FECHA)
+    storage = normalizar_storage_huawei(captura("huawei-dorado-02"), fecha_actualizacion=FECHA)
+    assert [ficha["activo"]["numero_serie"] for ficha in (rack, blade, chasis, storage)] == [
+        "HW2288HV5002", "HWCH121V5002", "HWE9000LAB002", "HWDORADO5000V6002"]
+    assert blade["servidor"]["tipo"] == "BLADE"
+    assert blade["componentes"]["ram"][0]["numero_serial"] == "HWRAM30001"
+    assert chasis["componentes"]["chasis_slot"][0]["serie_servidor"] == "HWCH121V5002"
+    assert storage["componentes"]["disco"][0]["numero_serial"] == "HWDSSD20001"
+    assert storage["activo"]["consumo_electrico_w"] == 1240
+
+
+def test_disco_huawei_solo_se_retira_con_ausencia_explicita_y_serie():
+    raiz = "1.3.6.1.4.1.2011.2.235.1.1.18.50.1"
+    datos = captura("huawei-2288h-v5-01")
+    serie = datos[raiz + ".7.4"]
+    datos[raiz + ".2.4"] = 1  # absence(1), presencia instalada es presence(2)
+    ficha = normalizar_servidor_huawei(datos, fecha_actualizacion=FECHA)
+    assert serie in ficha["discos_ausentes"]
+    assert serie not in {d["numero_serial"] for d in ficha["componentes"]["disco"]}
+    assert len(ficha["componentes"]["disco"]) == 3
+    datos.pop(raiz + ".2.4")
+    ficha_sin_prueba = normalizar_servidor_huawei(datos, fecha_actualizacion=FECHA)
+    assert ficha_sin_prueba["discos_ausentes"] == []
+    assert len(ficha_sin_prueba["componentes"]["disco"]) == 4

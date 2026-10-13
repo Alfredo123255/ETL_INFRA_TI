@@ -66,5 +66,21 @@ timeout /t 2 /nobreak >nul
 
 echo Iniciando huawei-dorado-01 en 127.0.0.43:17300 ...
 start "huawei-dorado-01 (127.0.0.43:17300)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000014857444f5241444f --v3-user=monitor_hwdorado --v3-auth-key=HwDoradoLab2026Auth --v3-auth-proto=SHA --v3-priv-key=HwDoradoLab2026Auth --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.43:17300 --data-dir="%REPO_ROOT%\data\huawei-dorado-01" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-dorado-01 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-2288h-v5-02 en 127.0.0.44:17400 ...
+start "huawei-2288h-v5-02 (127.0.0.44:17400)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000014857323238383032 --v3-user=monitor_hw2288_02 --v3-auth-key=Hw2288Lab2026Auth02 --v3-auth-proto=SHA --v3-priv-key=Hw2288Lab2026Auth02 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.44:17400 --data-dir="%REPO_ROOT%\data\huawei-2288h-v5-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-2288h-v5-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-ch121-v5-02 en 127.0.0.45:17500 ...
+start "huawei-ch121-v5-02 (127.0.0.45:17500)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001485743483132313032 --v3-user=monitor_hwch121_02 --v3-auth-key=HwCH121Lab2026Auth02 --v3-auth-proto=SHA --v3-priv-key=HwCH121Lab2026Auth02 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.45:17500 --data-dir="%REPO_ROOT%\data\huawei-ch121-v5-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-ch121-v5-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-e9000-02 en 127.0.0.46:17600 ...
+start "huawei-e9000-02 (127.0.0.46:17600)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001485745393030303032 --v3-user=monitor_hwe9000_02 --v3-auth-key=HwE9000Lab2026Auth02 --v3-auth-proto=SHA --v3-priv-key=HwE9000Lab2026Auth02 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.46:17600 --data-dir="%REPO_ROOT%\data\huawei-e9000-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-e9000-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-dorado-02 en 127.0.0.47:17700 ...
+start "huawei-dorado-02 (127.0.0.47:17700)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000014857444f5241444f3032 --v3-user=monitor_hwdorado_02 --v3-auth-key=HwDoradoLab2026Auth02 --v3-auth-proto=SHA --v3-priv-key=HwDoradoLab2026Auth02 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.47:17700 --data-dir="%REPO_ROOT%\data\huawei-dorado-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-dorado-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
 
 endlocal

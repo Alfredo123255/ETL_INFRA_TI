@@ -1,6 +1,6 @@
 # ETL de infraestructura TI — entorno SNMP simulado
 
-Este repositorio incluye trece agentes SNMPv3 simulados: nueve HPE/Aruba y cuatro Huawei.
+Este repositorio incluye diecisiete agentes SNMPv3 simulados: nueve HPE/Aruba y ocho Huawei.
 El ETL crea activos HPE/Aruba y Huawei en PostgreSQL; los perfiles Huawei cubren
 servidor rack, blade, chasis E9000 y storage OceanStor Dorado. La API corre
 separada del backend Spring Boot.
@@ -29,7 +29,7 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
    `clave_privacidad` para agentes con claves SNMPv3 diferentes; se puede ejecutar
    de nuevo sin duplicar la columna.
 
-2. **Iniciar los trece agentes SNMP**:
+2. **Iniciar los diecisiete agentes SNMP**:
 
    ```powershell
    cd C:\INGESOFT\ETL_INFRA_TI
@@ -39,7 +39,7 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
    ```
 
    El iniciador incluye DL380, DL360, tres blades, chasis c7000, switch Aruba, dos
-   storage HPE, Huawei 2288H, CH121, E9000 y OceanStor Dorado. Cada agente abre
+   storage HPE y dos instancias de cada perfil Huawei: 2288H, CH121, E9000 y OceanStor Dorado. Cada agente abre
    una ventana; la verificación confirma qué agente responde. Las credenciales y destinos
    simulados están en `data/<agente>/README.md`. En este equipo el iniciador usa
    el Python de Miniconda (`%USERPROFILE%\miniconda3\python.exe`), donde está
@@ -158,7 +158,7 @@ exitosa. La hora del fallo se guarda únicamente en el evento de estado.
 
 ## Datos simulados
 
-Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los trece
+Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los diecisiete
 agentes. Los MIB y los documentos de mapeo de OID están en `mibs/`; los Huawei en
 [`mibs/huawei/MAPEO-HUAWEI.md`](mibs/huawei/MAPEO-HUAWEI.md). Para cambiar
 una simulación, edita su archivo de datos y ejecuta las dos verificaciones de la
@@ -237,13 +237,13 @@ solo las variables personalizadas `API_HOST` y `API_PORT`.
 
 ### Agentes simulados
 
-Para los trece agentes usa el comando del paso 2 de «Arranque local completo».
-`data/start_agents.bat` inicia los trece en ventanas visibles;
+Para los diecisiete agentes usa el comando del paso 2 de «Arranque local completo».
+`data/start_agents.bat` inicia los diecisiete en ventanas visibles;
 `data/stop_agents.bat` los detiene, incluido el blade 3.
 El wrapper `data/run_responder.py` carga solamente la variación `numeric`,
 que es la única usada por los archivos `.snmprec`; los módulos opcionales
 Redis y SQL no se inicializan.
-Para verificar solo Huawei: `python -B data/verify_agents.py --solo huawei-2288h-v5-01 huawei-ch121-v5-01 huawei-e9000-01 huawei-dorado-01`.
+Para verificar solo los nuevos Huawei: `python -B data/verify_agents.py --solo huawei-2288h-v5-02 huawei-ch121-v5-02 huawei-e9000-02 huawei-dorado-02`.
 
 ### Llamada desde PowerShell
 

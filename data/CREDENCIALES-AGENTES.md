@@ -19,6 +19,10 @@ Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNM
 | `huawei-ch121-v5-01` | Blade Huawei | `127.0.0.41:17100` | `monitor_hwch121` | `HwCH121Lab2026Auth` | `HwCH121Lab2026Auth` |
 | `huawei-e9000-01` | Chasis Huawei | `127.0.0.42:17200` | `monitor_hwe9000` | `HwE9000Lab2026Auth` | `HwE9000Lab2026Auth` |
 | `huawei-dorado-01` | Storage Huawei | `127.0.0.43:17300` | `monitor_hwdorado` | `HwDoradoLab2026Auth` | `HwDoradoLab2026Auth` |
+| `huawei-2288h-v5-02` | Servidor Huawei | `127.0.0.44:17400` | `monitor_hw2288_02` | `Hw2288Lab2026Auth02` | `Hw2288Lab2026Auth02` |
+| `huawei-ch121-v5-02` | Blade Huawei | `127.0.0.45:17500` | `monitor_hwch121_02` | `HwCH121Lab2026Auth02` | `HwCH121Lab2026Auth02` |
+| `huawei-e9000-02` | Chasis Huawei | `127.0.0.46:17600` | `monitor_hwe9000_02` | `HwE9000Lab2026Auth02` | `HwE9000Lab2026Auth02` |
+| `huawei-dorado-02` | Storage Huawei | `127.0.0.47:17700` | `monitor_hwdorado_02` | `HwDoradoLab2026Auth02` | `HwDoradoLab2026Auth02` |
 
 ## Uso desde el frontend
 

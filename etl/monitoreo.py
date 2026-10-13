@@ -172,6 +172,27 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
     return cambios, eventos
 
 
+def _retirar_discos_confirmados(cur, activo_id, ausentes, presentes, fecha):
+    """Retira solo discos con ausencia explícita y serie aún identificable."""
+    series_presentes = {fila.get("numero_serial") for fila in presentes}
+    series = sorted(set(ausentes) - series_presentes - {None, ""})
+    if not series:
+        return 0
+    cur.execute("""SELECT id, numero_serial FROM disco
+        WHERE activo_id=%s AND numero_serial = ANY(%s) FOR UPDATE""",
+        (activo_id, series))
+    filas = cur.fetchall()
+    if len({fila["numero_serial"] for fila in filas}) != len(filas):
+        raise DatosIncompletos("Hay discos duplicados con la misma serie.")
+    for fila in filas:
+        registrar_evento_estado(cur, activo_id, "presencia", "Ausente",
+            f"Disco {fila['numero_serial']} retirado: bahía vacía confirmada por SNMP",
+            fecha, "disco", fila["numero_serial"])
+        cur.execute("DELETE FROM disco WHERE id=%s AND activo_id=%s",
+                    (fila["id"], activo_id))
+    return len(filas)
+
+
 def _sincronizar_slots(cur, chasis_id):
     """Mantiene el vínculo blade/slot cuando SNMP cambia la ocupación del chasis."""
     cur.execute("""SELECT s.id, s.servidor_id, s.hostname_servidor, s.estado,
@@ -290,6 +311,13 @@ def guardar_iteracion(config, referencia, ficha):
             c, e = _reconciliar(cur, referencia.activo_id, tabla, referencia.activo_id, filas, fecha)
             cambios += c
             eventos += e
+        if conexion["estado_conexion"] == "Activo" and \
+                anterior["estado_operativo"] == "Encendido" and \
+                activo["estado_operativo"] == "Encendido":
+            retirados = _retirar_discos_confirmados(cur, referencia.activo_id,
+                ficha.get("discos_ausentes", ()), componentes.get("disco", ()), fecha)
+            cambios += retirados
+            eventos += retirados
         if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes:
             _sincronizar_slots(cur, referencia.activo_id)
         guardar_metricas(db, referencia.activo_id, metricas)

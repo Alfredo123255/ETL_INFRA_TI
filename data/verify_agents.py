@@ -218,6 +218,33 @@ AGENTS = [
             ("IOPS nodo 1", "1.3.6.1.4.1.34774.4.1.21.3.1.5.1"),
         ],
     },
+    {
+        "nombre": "huawei-2288h-v5-02", "host": "127.0.0.44", "puerto": 17400,
+        "usuario": "monitor_hw2288_02", "auth_key": "Hw2288Lab2026Auth02", "priv_key": "Hw2288Lab2026Auth02",
+        "oids": [("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+                 ("serie iBMC", "1.3.6.1.4.1.2011.2.235.1.1.1.7.0")],
+    },
+    {
+        "nombre": "huawei-ch121-v5-02", "host": "127.0.0.45", "puerto": 17500,
+        "usuario": "monitor_hwch121_02", "auth_key": "HwCH121Lab2026Auth02", "priv_key": "HwCH121Lab2026Auth02",
+        "oids": [("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+                 ("serie blade", "1.3.6.1.4.1.2011.2.235.1.1.1.7.0"),
+                 ("serie chasis", "1.3.6.1.4.1.2011.2.235.1.1.44.7.0")],
+    },
+    {
+        "nombre": "huawei-e9000-02", "host": "127.0.0.46", "puerto": 17600,
+        "usuario": "monitor_hwe9000_02", "auth_key": "HwE9000Lab2026Auth02", "priv_key": "HwE9000Lab2026Auth02",
+        "oids": [("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+                 ("serie chasis", "1.3.6.1.4.1.2011.2.82.1.82.2.2001.1.15.1"),
+                 ("serie blade bahía 1", "1.3.6.1.4.1.2011.2.82.1.82.4.1.2004.1.10.1")],
+    },
+    {
+        "nombre": "huawei-dorado-02", "host": "127.0.0.47", "puerto": 17700,
+        "usuario": "monitor_hwdorado_02", "auth_key": "HwDoradoLab2026Auth02", "priv_key": "HwDoradoLab2026Auth02",
+        "oids": [("sysDescr.0", "1.3.6.1.2.1.1.1.0"),
+                 ("serie OceanStor", "1.3.6.1.4.1.34774.4.1.1.1.0"),
+                 ("potencia simulada", "1.3.6.1.2.1.99.1.1.1.4.100")],
+    },
 ]
 
 # --- OID de contadores crecientes (variacion `numeric` de snmpsim) -----

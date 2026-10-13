@@ -46,13 +46,22 @@ Casi todos los campos de condición HPE usan el patrón `other(1) / ok(2) / degr
 | `other(1)`, `degraded(3)` (o equivalentes "warning") | **Degradado** |
 | `failed(4)` (o equivalentes "not present / missing") | **Apagado** |
 
-**Limitación importante:** un agente SNMP que responde implica que el sistema host está encendido;
-por lo tanto `estado_operativo` = "Apagado" a nivel de servidor completo no es algo que un agente
-SNMP vivo pueda reportar de sí mismo (se infiere por *falta* de respuesta, no por un OID). El mapeo
-de `estado_operativo` de todas formas usa `cpqHeMibCondition` con la tabla de arriba porque es el
-OID de condición general más cercano que expone el MIB; el valor `Apagado` en ese campo específico
-sólo se usará en la simulación como demostración del enum, no como algo que ocurriría en la
-realidad con el agente arriba.
+**Estado general de DL380, DL360 y BL460c:** el ETL combina salud y energía.
+`cpqSm2CntlrServerPowerState` (`1.3.6.1.4.1.232.9.2.2.32.0`, CPQSM2-MIB)
+define `unknown(1)`, `poweredOff(2)`, `poweredOn(3)` y
+`insufficientPowerOrPowerOnDenied(4)`. Los cinco simuladores de estos modelos
+incluyen este escalar con energía inicial `poweredOn(3)`.
+
+- Energía `2`: **Apagado**, independientemente de la salud.
+- Energía `3` y `cpqHeMibCondition=2`: **Encendido**.
+- Energía `3` y salud degradada/fallo/desconocida: **Degradado**.
+- Energía desconocida, denegada o ausente: **Degradado**, como respaldo del enum
+  actual; no se afirma apagado ni encendido sin evidencia.
+
+El agente iLO puede responder aunque el servidor esté apagado. La falta de
+respuesta se maneja por separado como **Sin conexión**. La tabla anterior
+continúa aplicándose a los demás perfiles y componentes; este cambio está
+limitado al estado general de los tres modelos de servidor indicados.
 
 ## 3. Campos generales del servidor
 
@@ -63,7 +72,7 @@ realidad con el agente arriba.
 | `fabricante` | **No disponible como OID.** Ninguno de los 7 módulos expone un campo de fabricante explícito (todo el árbol es `enterprises.232` = Compaq/HPE por diseño, se asume implícito). Se dejará como constante fija de aplicación (`"HPE"`), no como valor leído de un OID. |
 | `modelo` | `1.3.6.1.4.1.232.2.2.4.2` (`cpqSiProductName`) | CPQSINFO-MIB | DisplayString, ej. "ProLiant DL380 Gen10" |
 | `generacion` | **No disponible como OID discreto.** Va implícita como subcadena dentro de `cpqSiProductName` (p. ej. "Gen10"), pero no hay un campo separado sólo para la generación. |
-| `estado_operativo` | `1.3.6.1.4.1.232.6.1.3` (`cpqHeMibCondition`) | CPQHLTH-MIB | INTEGER `other/ok/degraded/failed` → ver tabla EstadoEnum arriba |
+| `estado_operativo` | `1.3.6.1.4.1.232.6.1.3` (`cpqHeMibCondition`) | CPQHLTH-MIB | Salud general; en DL380/DL360/BL460c se combina con energía según sección 2 |
 | `temperatura` | `1.3.6.1.4.1.232.6.2.6.8.1.4` (`cpqHeTemperatureCelsius`), instancia por sensor vía `cpqHeTemperatureLocale` (`...8.1.3`) | CPQHLTH-MIB | INTEGER, grados Celsius. Se usará el sensor `ambient(11)` como temperatura representativa del sistema. |
 | `consumo_electico_w` | `1.3.6.1.4.1.232.6.2.15.3` (`cpqHePowerMeterCurrReading`) | CPQHLTH-MIB | INTEGER, vatios. Escalar (no tabla) |
 | `cpuTotalGhz` | Derivado de `cpqSeCpuSpeed` (`1.3.6.1.4.1.232.1.2.2.1.1.4`, MHz) y `cpqSeCpuCore` (`...1.1.15`, núcleos) | CPQSTDEQ-MIB | Lo calcula el backend como suma de `(velocidad_mhz / 1000) × cantidad_nucleos` por cada CPU. El ETL usa la misma base para derivar el uso, sin guardar el total como columna o métrica. |

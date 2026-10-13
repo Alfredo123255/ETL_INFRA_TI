@@ -265,3 +265,35 @@ def test_tipo_servidor_se_infiere_del_modelo():
     blade = normalizar_servidor_hpe(registros("hpe-bl460c-01"), fecha_actualizacion=FECHA, tipo="AUTO")
     assert rack["servidor"]["tipo"] == "RACKEABLE"
     assert blade["servidor"]["tipo"] == "BLADE"
+
+
+@pytest.mark.parametrize("agente", [
+    "hpe-dl380-01", "hpe-dl360-01", "hpe-bl460c-01", "hpe-bl460c-02", "hpe-bl460c-03",
+])
+@pytest.mark.parametrize("energia,salud,esperado", [
+    (3, 2, "Encendido"), (3, 3, "Degradado"), (3, 4, "Degradado"),
+    (2, 2, "Apagado"), (2, 3, "Apagado"), (2, 4, "Apagado"),
+    (1, 2, "Degradado"), (4, 2, "Degradado"), (None, 2, "Degradado"),
+    (3, 1, "Degradado"), (3, None, "Degradado"),
+])
+def test_energia_y_salud_servidores_hpe(agente, energia, salud, esperado):
+    datos = registros(agente)
+    for campo, valor in (("estado_energia", energia), ("estado_operativo", salud)):
+        oid = OIDS_IDENTIDAD[campo]
+        if valor is None:
+            datos.pop(oid, None)
+        else:
+            datos[oid] = rfc1902.Integer(valor)
+    ficha = normalizar_servidor_hpe(datos, fecha_actualizacion=FECHA, tipo="AUTO")
+    assert ficha["activo"]["estado_operativo"] == esperado
+
+
+def test_fallo_energia_servidor_no_cambia_estado_del_storage():
+    from etl.normalizacion.storage import normalizar_storage_hpe, SS
+    from tests.unitarios.test_otros_activos import captura
+    datos = captura("hpe-storage-fc-01")
+    salud_arreglo = next(oid for oid in datos if oid.startswith(SS + ".11."))
+    datos[salud_arreglo] = rfc1902.Integer(4)
+    datos[OIDS_IDENTIDAD["estado_energia"]] = rfc1902.Integer(3)
+    ficha = normalizar_storage_hpe(datos, fecha_actualizacion=FECHA)
+    assert ficha["activo"]["estado_operativo"] == "Apagado"

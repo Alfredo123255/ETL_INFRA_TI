@@ -71,6 +71,18 @@ def mac(valor):
     return ":".join(f"{octeto:02x}" for octeto in octetos)
 
 
+def estado_servidor_hpe(modelo, salud, energia):
+    """Energía iLO y salud separadas para DL380, DL360 y BL460c."""
+    if not re.search(r"\b(?:DL380|DL360|BL460c)\b", modelo or "", re.IGNORECASE):
+        return normalizar_estado(salud, CONDICION_HPE)
+    if energia == 2:  # CPQSM2-MIB: poweredOff
+        return "Apagado"
+    if energia == 3 and salud == 2:  # poweredOn y CPQHLTH-MIB: ok
+        return "Encendido"
+    # Energía desconocida/denegada/ausente o salud no correcta: no afirmar apagado.
+    return "Degradado"
+
+
 def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABLE"):
     if tipo not in ("AUTO", "RACKEABLE", "BLADE"):
         raise DatosIncompletos("Tipo de servidor inválido.")
@@ -102,7 +114,8 @@ def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABL
     activo = {
         "numero_serie": serie, "hostname": hostname, "fabricante": "HPE", "modelo": modelo,
         "generacion": generacion.group() if generacion else None, "tipo_activo": "SERVIDOR",
-        "estado_operativo": normalizar_estado(identidad["estado_operativo"], CONDICION_HPE),
+        "estado_operativo": estado_servidor_hpe(
+            modelo, numero(identidad["estado_operativo"]), numero(identidad["estado_energia"])),
         "version_firmware": texto(identidad["version_firmware"]),
         "ultima_actualizacion": fecha_actualizacion,
         "temperatura": max(sensores) if sensores else None,
@@ -309,6 +322,7 @@ def normalizar_servidor_huawei(datos, *, fecha_actualizacion, tipo="AUTO"):
                    consumo=_n(datos, d + ".1.13.0"))
     componentes = {nombre: [] for nombre in ("cpu", "ram", "disco", "controladora_raid",
                                                "tarjeta_red", "ventilador", "fuente_poder")}
+    discos_ausentes = []
     for _, f in filas_oid(datos, {"marca": d + ".15.50.1.2", "familia": d + ".15.50.1.3",
                               "modelo": d + ".15.50.1.4", "mhz": d + ".15.50.1.5",
                               "estado": d + ".15.50.1.6", "nucleos": d + ".15.50.1.12",
@@ -328,11 +342,19 @@ def normalizar_servidor_huawei(datos, *, fecha_actualizacion, tipo="AUTO"):
             "generacion": texto(f.get("tipo")), "capacidad_gb": _cantidad(f.get("gb"), "GB"),
             "velocidad_mhz": _cantidad(f.get("mhz"), "MHz"),
             "estado": _estado(numero(f.get("estado")))})
-    for _, f in filas_oid(datos, {"estado": d + ".18.50.1.3", "serie": d + ".18.50.1.7",
+    for _, f in filas_oid(datos, {"presencia": d + ".18.50.1.2",
+                              "estado": d + ".18.50.1.3", "serie": d + ".18.50.1.7",
                               "modelo": d + ".18.50.1.8", "marca": d + ".18.50.1.9",
                               "gb": d + ".18.50.1.12"}):
+        serie_disco = texto(f.get("serie"))
+        # iBMC: absence(1), presence(2), unknown(3). Solo una ausencia
+        # explícita con serie permite identificar la fila a retirar.
+        if numero(f.get("presencia")) == 1:
+            if serie_disco:
+                discos_ausentes.append(serie_disco)
+            continue
         modelo_disco = texto(f.get("modelo"))
-        componentes["disco"].append({"numero_serial": texto(f.get("serie")),
+        componentes["disco"].append({"numero_serial": serie_disco,
             "marca": texto(f.get("marca")), "modelo": modelo_disco,
             "tipo": "NVMe" if modelo_disco and "NVME" in modelo_disco.upper() else
                     "SAS" if modelo_disco and "SAS" in modelo_disco.upper() else None,
@@ -391,5 +413,6 @@ def normalizar_servidor_huawei(datos, *, fecha_actualizacion, tipo="AUTO"):
                total_ram and ram_pct is not None and 0 <= ram_pct <= 100 else None)]
     return {"activo": activo, "servidor": {"tipo": "BLADE" if blade else "RACKEABLE",
             "version_so": None, "ip_sistema_operativo": None},
-            "componentes": componentes, "mediciones": _mediciones(activo, extras),
+            "componentes": componentes, "discos_ausentes": discos_ausentes,
+            "mediciones": _mediciones(activo, extras),
             "ubicacion_snmp": _s(datos, SYSTEM["ubicacion"])}

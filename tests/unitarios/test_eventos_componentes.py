@@ -81,6 +81,43 @@ def test_componente_ausente_conserva_ultimo_estado(monkeypatch, tabla, clave, va
     assert eventos == []
 
 
+def test_disco_con_bahia_vacia_sale_del_inventario_y_conserva_evento(monkeypatch):
+    class Cursor:
+        def __init__(self):
+            self.consultas = []
+
+        def execute(self, sql, params):
+            self.consultas.append((sql, params))
+
+        def fetchall(self):
+            return [{"id": 7, "numero_serial": "DISCO-1"}]
+
+    eventos = []
+    monkeypatch.setattr(monitoreo, "registrar_evento_estado",
+        lambda *args: eventos.append(args))
+    cur = Cursor()
+    assert monitoreo._retirar_discos_confirmados(
+        cur, 19, ["DISCO-1"], [{"numero_serial": "DISCO-2"}], FECHA) == 1
+    assert any("DELETE FROM disco" in sql for sql, _ in cur.consultas)
+    assert eventos[0][1:3] == (19, "presencia")
+    assert eventos[0][3] == "Ausente"
+    assert eventos[0][-2:] == ("disco", "DISCO-1")
+
+
+def test_no_elimina_disco_sin_serie_identificable_o_aun_presente(monkeypatch):
+    monkeypatch.setattr(monitoreo, "registrar_evento_estado",
+        lambda *_args: pytest.fail("No debería registrar evento"))
+
+    class Cursor:
+        def execute(self, *_args):
+            pytest.fail("No debería consultar ni borrar discos")
+
+    assert monitoreo._retirar_discos_confirmados(
+        Cursor(), 19, [None, ""], [], FECHA) == 0
+    assert monitoreo._retirar_discos_confirmados(
+        Cursor(), 19, ["DISCO-1"], [{"numero_serial": "DISCO-1"}], FECHA) == 0
+
+
 def test_slot_ausente_queda_libre_una_sola_vez(monkeypatch):
     fila = {"id": 7, "numero_slot": 1, "estado": "OCUPADO"}
     eventos = preparar(monkeypatch, {"chasis_slot": [fila]})

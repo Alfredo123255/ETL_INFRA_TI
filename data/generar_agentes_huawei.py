@@ -114,9 +114,12 @@ def interfaces(data, ports):
             put(data, f"{xprefix}.{column}.{index}", tag, value)
 
 
-def ibmc(data, mib, hostname, serial, model, slot=None):
+def ibmc(data, mib, hostname, serial, model, slot=None, *, instancia=None,
+         serie_chasis=None, ubicacion=None):
+    instancia = (1 if slot else 0) if instancia is None else instancia
     system(data, hostname, f"Huawei {model} iBMC", mib.oid("hwiBMC"),
-           "DC-LAB-HUAWEI / E9000 Bay 1" if slot else "DC-LAB-HUAWEI / Rack H01")
+           ubicacion or ("DC-LAB-HUAWEI / E9000 Bay 1" if slot else
+                         "DC-LAB-HUAWEI / Rack H01"))
     for symbol, tag, value in [
         ("systemHealth", "2", 1), ("deviceName", "4", model),
         ("deviceSerialNo", "4", serial), ("hostName", "4", hostname),
@@ -129,7 +132,7 @@ def ibmc(data, mib, hostname, serial, model, slot=None):
         vendor(data, mib, "deviceslotID", slot, "4")
         vendor(data, mib, "shelfChassisID", 1, "2")
         vendor(data, mib, "shelfType", "E9000")
-        vendor(data, mib, "shelfSerialNumber", "HWE9000LAB001")
+        vendor(data, mib, "shelfSerialNumber", serie_chasis or "HWE9000LAB001")
     for index in (1, 2):
         cpu = "Intel Xeon E5-2698 v4" if slot else "Intel Xeon Gold 6226R"
         for symbol, tag, value in [
@@ -141,6 +144,19 @@ def ibmc(data, mib, hostname, serial, model, slot=None):
             ("cpuThreadCount", "2", 40 if slot else 32),
         ]:
             vendor(data, mib, symbol, value, tag, index)
+    for index, decimas in enumerate((430, 450) if slot else (480, 500), 1):
+        vendor(data, mib, "temperatureIndex", index, "2", index)
+        vendor(data, mib, "temperatureReading", decimas, "2", index)
+    for symbol, tag, value in [
+        ("raidControllerIndex", "2", 1),
+        ("raidControllerName", "4", "RAID Controller 1"),
+        ("raidControllerType", "4", "Huawei RAID Controller CH121 V5" if slot else
+         "Huawei RAID Controller 2288H V5"),
+        ("raidControllerHealthStatus", "2", 0),
+    ]:
+        vendor(data, mib, symbol, value, tag, 1)
+    for index, level in enumerate(("RAID1",) if slot else ("RAID1", "RAID5"), 1):
+        vendor(data, mib, "logicalDriveRAIDLevel", level, "4", f"1.{index}")
     for index in range(1, 5):
         for symbol, tag, value in [
             ("memoryDimmIndex", "2", index), ("memoryManufacturer", "4", "Samsung"),
@@ -148,14 +164,14 @@ def ibmc(data, mib, hostname, serial, model, slot=None):
             ("memoryClockRate", "4", f"{2400 if slot else 2933} MHz"),
             ("memoryStatus", "2", 1), ("memoryDevicename", "4", f"DIMM{index}"),
             ("memoryType", "4", "DDR4"),
-            ("memorySN", "4", f"HWRAM{1 if slot else 0}{index:04d}"),
+            ("memorySN", "4", f"HWRAM{instancia}{index:04d}"),
         ]:
             vendor(data, mib, symbol, value, tag, index)
     for index in range(1, 3 if slot else 5):
         for symbol, tag, value in [
-            ("hardDiskIndex", "2", index), ("hardDiskPresence", "2", 1),
+            ("hardDiskIndex", "2", index), ("hardDiskPresence", "2", 2),
             ("hardDiskStatus", "2", 1), ("hardDiskLocation", "4", f"Bay {index}"),
-            ("hardDiskSerialNumber", "4", f"HWSSD{1 if slot else 0}{index:04d}"),
+            ("hardDiskSerialNumber", "4", f"HWSSD{instancia}{index:04d}"),
             ("hardDiskModelNumber", "4", "Huawei 960GB SAS SSD"),
             ("hardDiskManufacturer", "4", "Huawei"),
             ("hardDiskCapacityInGB", "2", 960),
@@ -171,7 +187,7 @@ def ibmc(data, mib, hostname, serial, model, slot=None):
                 ("powerSupplyModel", "4", "Huawei 900W AC PSU"),
                 ("powerSupplyPowerRating", "2", 900),
                 ("powerSupplyStatus", "2", 1),
-                ("powerSupplySN", "4", f"HWPSU{index:04d}"),
+                ("powerSupplySN", "4", f"HWPSU{instancia}{index:04d}" if instancia else f"HWPSU{index:04d}"),
             ]:
                 vendor(data, mib, symbol, value, tag, index)
         for index in range(1, 5):
@@ -184,28 +200,31 @@ def ibmc(data, mib, hostname, serial, model, slot=None):
         for symbol, tag, value in [
             ("netCardIndex", "2", index),
             ("netCardNICModel", "4", "Huawei 10Gb Ethernet Adapter"),
-            ("netCardNICName", "4", f"HWNIC{1 if slot else 0}{index:04d}"),
+            ("netCardNICName", "4", f"HWNIC{instancia}{index:04d}"),
             ("netCardNICManufacturer", "4", "Huawei"),
             ("netCardStatus", "2", 1),
         ]:
             vendor(data, mib, symbol, value, tag, index)
-    interfaces(data, [("eth1", "02:48:57:10:00:01", 1000000000),
-                      ("eth2", "02:48:57:10:00:02", 10000000000)])
+    mac_instancia = max(0, instancia - 1)
+    interfaces(data, [("eth1", f"02:48:57:10:{mac_instancia:02x}:01", 1000000000),
+                      ("eth2", f"02:48:57:10:{mac_instancia:02x}:02", 10000000000)])
 
 
-def e9000(data, mib):
-    system(data, "huawei-e9000-01", "Huawei E9000 Blade Server Chassis MM910",
-           mib.oid("hwSMM"), "DC-LAB-HUAWEI / Rack H02")
+def e9000(data, mib, *, instancia=1, serie_blade="HWCH121V5001"):
+    hostname = f"huawei-e9000-{instancia:02d}"
+    serie = f"HWE9000LAB{instancia:03d}"
+    system(data, hostname, "Huawei E9000 Blade Server Chassis MM910",
+           mib.oid("hwSMM"), f"DC-LAB-HUAWEI / Rack H{2 if instancia == 1 else 5:02d}")
     for symbol, tag, value in [
         ("systemHealth", "2", 0), ("shelfHealth", "2", 0),
-        ("shelfChassisName", "4", "huawei-e9000-01"),
-        ("shelfChassisID", "4", "E9000-01"),
+        ("shelfChassisName", "4", hostname),
+        ("shelfChassisID", "4", f"E9000-{instancia:02d}"),
         ("shelfRealTimePower", "2", 1760), ("shelfOutletTemp", "2", 27),
     ]:
         vendor(data, mib, symbol, value, tag)
     for symbol, tag, value in [
         ("shelfNumber", "2", 1), ("shelfPartNumber", "4", "E9000"),
-        ("shelfSerialNumber", "4", "HWE9000LAB001"),
+        ("shelfSerialNumber", "4", serie),
         ("shelfType", "4", "E9000"),
     ]:
         vendor(data, mib, symbol, value, tag, 1)
@@ -217,7 +236,7 @@ def e9000(data, mib):
         ]:
             vendor(data, mib, symbol, value, tag)
     vendor(data, mib, "b1ProductName", "CH121 V5")
-    vendor(data, mib, "b1fruProductSerialNumber", "HWCH121V5001", index=1)
+    vendor(data, mib, "b1fruProductSerialNumber", serie_blade, index=1)
     for index in (1, 2):
         for symbol, tag, value in [
             ("mPsuIndex", "2", index), ("mPsuLocation", "2", index),
@@ -241,15 +260,16 @@ def e9000(data, mib):
     vendor(data, mib, "fanTrayHealth", 0, "2")
     vendor(data, mib, "smmTemperatureIndex", 1, "2", 1)
     vendor(data, mib, "smmTemperatureReading", 27, "2", 1)
-    interfaces(data, [("MM910 uplink 1", "02:48:57:90:00:01", 10000000000),
-                      ("MM910 uplink 2", "02:48:57:90:00:02", 10000000000)])
+    interfaces(data, [("MM910 uplink 1", f"02:48:57:90:{instancia - 1:02x}:01", 10000000000),
+                      ("MM910 uplink 2", f"02:48:57:90:{instancia - 1:02x}:02", 10000000000)])
 
 
-def dorado(data, svc, hw, space, perf):
-    system(data, "huawei-dorado-01", "Huawei OceanStor Dorado 5000 V6",
-           svc.oid("hwISM"), "DC-LAB-HUAWEI / Rack H03")
+def dorado(data, svc, hw, space, perf, *, instancia=1):
+    codigo = "" if instancia == 1 else str(instancia)
+    system(data, f"huawei-dorado-{instancia:02d}", "Huawei OceanStor Dorado 5000 V6",
+           svc.oid("hwISM"), f"DC-LAB-HUAWEI / Rack H{3 if instancia == 1 else 6:02d}")
     for symbol, tag, value in [
-        ("deviceId", "4", "HWDORADO5000V6001"),
+        ("deviceId", "4", f"HWDORADO5000V6{instancia:03d}"),
         ("usedCapacity", "70", 10_485_760),
         ("totalCapacity", "70", 20_971_520),
         ("version", "4", "6.1.6"),
@@ -269,7 +289,7 @@ def dorado(data, svc, hw, space, perf):
             ("hwInfoControllerRunningStatus", "66", 2),
             ("hwInfoControllerLocation", "4", f"Controller {index}"),
             ("hwInfoControllerElectronicLabel", "4",
-             f"SN=HWDCTRL{index:04d};MODEL=Dorado 5000 V6 Controller (simulado)"),
+             f"SN=HWDCTRL{codigo}{index:04d};MODEL=Dorado 5000 V6 Controller (simulado)"),
             ("hwInfoControllerCacheCapacity", "70", 131072),
             ("hwInfoControllerCPUUsage", "66", 28 + index),
             ("hwInfoControllerMemoryUsage", "66", 43 + index),
@@ -278,7 +298,7 @@ def dorado(data, svc, hw, space, perf):
     # Sensores estándar de laboratorio. El MIB propietario Dorado solo da
     # nivel de ventilador y no incluye consumo actual en W ni RPM.
     for sensor_index, name, sensor_type, value in [
-        (100, "Storage total power", 6, 1180),
+        (100, "Storage total power", 6, 1180 if instancia == 1 else 1240),
         (201, "Fan 1 RPM", 10, 6200),
         (202, "Fan 2 RPM", 10, 6300),
         (203, "Fan 3 RPM", 10, 6150),
@@ -299,7 +319,7 @@ def dorado(data, svc, hw, space, perf):
             ("hwInfoDiskTemperature", "66", 30 + index),
             ("hwInfoDiskModel", "4", "Huawei 3.84TB NVMe SSD"),
             ("hwInfoDiskManufacturer", "4", "Huawei"),
-            ("hwInfoDiskSerialNumber", "4", f"HWDSSD{index:04d}"),
+            ("hwInfoDiskSerialNumber", "4", f"HWDSSD{codigo}{index:04d}"),
         ]:
             vendor(data, hw, symbol, value, tag, index)
     for index in (1, 2):
@@ -310,7 +330,7 @@ def dorado(data, svc, hw, space, perf):
             ("hwInfoPowerType", "66", 1),
             ("hwInfoPowerManufacturer", "4", "Huawei"),
             ("hwInfoPowerModle", "4", "Huawei 2000W AC PSU"),
-            ("hwInfoPowerSerialNumber", "4", f"HWDPSU{index:04d}"),
+            ("hwInfoPowerSerialNumber", "4", f"HWDPSU{codigo}{index:04d}"),
         ]:
             vendor(data, hw, symbol, value, tag, index)
     for index in range(1, 5):
@@ -320,7 +340,7 @@ def dorado(data, svc, hw, space, perf):
             ("hwInfoFanRunningStatus", "66", 2),
             ("hwInfoFanRunningLevel", "66", 1),
             ("hwInfoFanElectronicLabel", "4",
-             f"SN=HWDFAN{index:04d};MODEL=Dorado Fan Module (simulado)"),
+             f"SN=HWDFAN{codigo}{index:04d};MODEL=Dorado Fan Module (simulado)"),
         ]:
             vendor(data, hw, symbol, value, tag, index)
     for symbol, tag, value in [
@@ -346,7 +366,7 @@ def dorado(data, svc, hw, space, perf):
             ("hwStorageFCPortIfIndex", "2", index),
             ("hwStorageFCPortID", "66", index),
             ("hwStorageFCPortStatus", "2", 1),
-            ("hwStorageFCPortWWN", "4", f"50060E801000000{index}"),
+            ("hwStorageFCPortWWN", "4", f"50060E80{instancia}000000{index}"),
             ("hwStorageFCPortSpeedRate", "2", 16),
         ]:
             vendor(data, svc, symbol, value, tag, index)
@@ -374,8 +394,11 @@ def save(name, data):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--solo", choices=("huawei-2288h-v5-01", "huawei-ch121-v5-01",
-                                           "huawei-e9000-01", "huawei-dorado-01"))
+    parser.add_argument("--solo", nargs="+", choices=(
+        "huawei-2288h-v5-01", "huawei-2288h-v5-02",
+        "huawei-ch121-v5-01", "huawei-ch121-v5-02",
+        "huawei-e9000-01", "huawei-e9000-02",
+        "huawei-dorado-01", "huawei-dorado-02"))
     args = parser.parse_args()
     ibmc_file = "HUAWEI-SERVER-iBMC-MIB.mib"
     rack = from_zip("*V502.zip", ibmc_file, {"huawei": ENTERPRISES + ".2011"})
@@ -391,12 +414,16 @@ def main():
     perf = Mib((dorado_root / "ISM-PERFORMANCE-MIB.mib").read_bytes().decode("latin-1"), seeds)
     profiles = [
         ("huawei-2288h-v5-01", lambda d: ibmc(d, rack, "huawei-2288h-v5-01", "HW2288HV5001", "FusionServer Pro 2288H V5")),
+        ("huawei-2288h-v5-02", lambda d: ibmc(d, rack, "huawei-2288h-v5-02", "HW2288HV5002", "FusionServer Pro 2288H V5", instancia=2, ubicacion="DC-LAB-HUAWEI / Rack H04")),
         ("huawei-ch121-v5-01", lambda d: ibmc(d, blade, "huawei-ch121-v5-01", "HWCH121V5001", "CH121 V5", 1)),
+        ("huawei-ch121-v5-02", lambda d: ibmc(d, blade, "huawei-ch121-v5-02", "HWCH121V5002", "CH121 V5", 1, instancia=3, serie_chasis="HWE9000LAB002", ubicacion="DC-LAB-HUAWEI / E9000-02 Bay 1")),
         ("huawei-e9000-01", lambda d: e9000(d, chassis)),
+        ("huawei-e9000-02", lambda d: e9000(d, chassis, instancia=2, serie_blade="HWCH121V5002")),
         ("huawei-dorado-01", lambda d: dorado(d, svc, hw, space, perf)),
+        ("huawei-dorado-02", lambda d: dorado(d, svc, hw, space, perf, instancia=2)),
     ]
     for name, fill in profiles:
-        if args.solo and name != args.solo:
+        if args.solo and name not in args.solo:
             continue
         data = rows()
         fill(data)
