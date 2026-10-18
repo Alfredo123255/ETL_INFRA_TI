@@ -29,6 +29,8 @@ def preparar(monkeypatch, anteriores):
     monkeypatch.setattr(monitoreo, "_filas", filas)
     monkeypatch.setattr(monitoreo, "_actualizar_fila", actualizar)
     monkeypatch.setattr(monitoreo, "registrar_evento_estado", evento)
+    monkeypatch.setattr(monitoreo, "_eliminar_componente", lambda cur, tabla, fila_id, padre:
+                        anteriores[tabla].remove(next(f for f in anteriores[tabla] if f["id"] == fila_id)))
     return eventos
 
 
@@ -68,20 +70,18 @@ def test_cambio_de_estado_registra_un_evento_y_no_lo_duplica(
     ("fuente_poder", "numero_serial", "PSU-1"),
     ("ventilador", "numero_serial", "FAN-1"),
     ("tarjeta_red", "numero_serial", "NIC-1"),
-    ("puerto_switch", "numero_puerto", "1/1/1"),
-    ("puerto_tarjeta_red", "numero_puerto", "1"),
 ])
-def test_componente_ausente_conserva_ultimo_estado(monkeypatch, tabla, clave, valor):
+def test_componente_ausente_en_lectura_confirmada_se_elimina_sin_historial(monkeypatch, tabla, clave, valor):
     fila = {"id": 7, clave: valor, "estado": "Encendido"}
     eventos = preparar(monkeypatch, {tabla: [fila]})
 
-    assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (0, 0)
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (1, 0)
     assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (0, 0)
     assert fila["estado"] == "Encendido"
     assert eventos == []
 
 
-def test_disco_con_bahia_vacia_sale_del_inventario_y_conserva_evento(monkeypatch):
+def test_disco_con_bahia_vacia_sale_del_inventario_sin_evento_de_retiro(monkeypatch):
     class Cursor:
         def __init__(self):
             self.consultas = []
@@ -99,9 +99,7 @@ def test_disco_con_bahia_vacia_sale_del_inventario_y_conserva_evento(monkeypatch
     assert monitoreo._retirar_discos_confirmados(
         cur, 19, ["DISCO-1"], [{"numero_serial": "DISCO-2"}], FECHA) == 1
     assert any("DELETE FROM disco" in sql for sql, _ in cur.consultas)
-    assert eventos[0][1:3] == (19, "presencia")
-    assert eventos[0][3] == "Ausente"
-    assert eventos[0][-2:] == ("disco", "DISCO-1")
+    assert eventos == []
 
 
 def test_no_elimina_disco_sin_serie_identificable_o_aun_presente(monkeypatch):
@@ -118,7 +116,7 @@ def test_no_elimina_disco_sin_serie_identificable_o_aun_presente(monkeypatch):
         Cursor(), 19, ["DISCO-1"], [{"numero_serial": "DISCO-1"}], FECHA) == 0
 
 
-def test_slot_ausente_queda_libre_una_sola_vez(monkeypatch):
+def test_slot_ausente_en_lectura_confirmada_conserva_fila_libre(monkeypatch):
     fila = {"id": 7, "numero_slot": 1, "estado": "OCUPADO"}
     eventos = preparar(monkeypatch, {"chasis_slot": [fila]})
 

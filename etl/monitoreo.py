@@ -10,7 +10,7 @@ from etl.db import conexion_bd
 from etl.errores import DatosIncompletos, ErrorExtraccion
 from etl.metricas import construir_metricas
 from etl.repositorio import (COLUMNAS, _insertar, guardar_metricas, registrar_evento_estado,
-    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO, resolver_slots_por_serie)
+    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO, CAMPO_LECTURA_COMPONENTES, resolver_slots_por_serie)
 from etl.snmp_cliente import ConexionSNMP
 from api.dto import separar_destino
 from api.seguridad import resolver_destino
@@ -23,6 +23,7 @@ COMPATIBLES = {
     "CHASIS": ("chasis_slot", "tarjeta_red", "fuente_poder", "ventilador"),
 }
 RELACION = {"puerto_switch": "switch_id", "chasis_slot": "chasis_id", "puerto_tarjeta_red": "tarjeta_red_id"}
+ESTRUCTURALES = {"puerto_switch", "puerto_tarjeta_red", "chasis_slot"}
 NUMERICOS_DOS_DECIMALES = {
     "activo": {"temperatura", "consumo_electrico_w"},
     "cpu": {"velocidad_ghz", "cache_l1_mb", "cache_l2_mb", "cache_l3_mb"},
@@ -94,11 +95,65 @@ def _evento(cur, activo_id, tabla, etiqueta, estado, anterior, fecha):
     registrar_evento_estado(cur, activo_id, "estado", estado, descripcion, fecha, tabla, etiqueta)
 
 
-def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
+def _proteger_lectura_vacia(cur, activo_id, tabla, padre_id, nuevas, fecha, limite):
+    """Confirma vacíos consecutivos mediante marcas existentes; no cambia el esquema."""
+    # Cada NIC necesita un contador independiente para sus puertos.
+    etiqueta = f"tarjeta_red_id:{padre_id}" if tabla == "puerto_tarjeta_red" else None
+    cur.execute("""SELECT id, valor_nuevo FROM historico_estado
+        WHERE activo_id=%s AND componente_tipo=%s AND campo=%s
+          AND componente_sn IS NOT DISTINCT FROM %s ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+        (activo_id, tabla, CAMPO_LECTURA_COMPONENTES, etiqueta))
+    marca = cur.fetchone()
+    consecutivas = int(marca["valor_nuevo"]) if marca and str(marca["valor_nuevo"]).isdigit() else 0
+    if nuevas:
+        if consecutivas:
+            # También se reinicia si los componentes no cambiaron de estado.
+            registrar_evento_estado(cur, activo_id, CAMPO_LECTURA_COMPONENTES, "0",
+                f"{tabla}: lectura recuperada, se reinicia la confirmación de vacíos",
+                fecha, tabla, etiqueta)
+            return False, 1
+        return False, 0
+    anteriores = _filas(cur, tabla, RELACION.get(tabla, "activo_id"), padre_id)
+    estado_inactivo = "LIBRE" if tabla == "chasis_slot" else "Baja"
+    cantidad = sum(fila.get("estado") != estado_inactivo for fila in anteriores)
+    if not cantidad:
+        return False, 0
+    consecutivas += 1
+    if consecutivas >= limite:
+        if marca:
+            cur.execute("""UPDATE historico_estado SET valor_nuevo='0'
+                WHERE id=%s""", (marca["id"],))
+        return False, 0
+    descripcion = f"{tabla}: lectura vacía, se conservan {cantidad} componentes sin cambios"
+    if consecutivas > 1:
+        cur.execute("UPDATE historico_estado SET valor_nuevo=%s WHERE id=%s",
+                    (str(consecutivas), marca["id"]))
+        return True, 0
+    registrar_evento_estado(cur, activo_id, CAMPO_LECTURA_COMPONENTES, str(consecutivas),
+                            descripcion, fecha, tabla, etiqueta)
+    return True, 1
+
+
+def _eliminar_componente(cur, tabla, fila_id, padre_id):
+    """Elimina primero dependencias sin cambiar relaciones ni restricciones del esquema."""
+    if tabla in ESTRUCTURALES:
+        raise DatosIncompletos("Los puertos y slots estructurales conservan sus filas.")
+    if tabla == "tarjeta_red":
+        cur.execute("DELETE FROM puerto_tarjeta_red WHERE tarjeta_red_id=%s", (fila_id,))
+    relacion = RELACION.get(tabla, "activo_id")
+    cur.execute(f"DELETE FROM {tabla} WHERE id=%s AND {relacion}=%s", (fila_id, padre_id))
+
+
+def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lectura=None):
+    eventos_lectura = 0
+    if proteger_lectura is not None:
+        omitida, eventos_lectura = proteger_lectura(tabla, padre_id, nuevas)
+        if omitida:
+            return 0, eventos_lectura
     relacion = RELACION.get(tabla, "activo_id")
     anteriores = _filas(cur, tabla, relacion, padre_id)
     disponibles = {fila["id"]: fila for fila in anteriores}
-    eventos = cambios = 0
+    eventos, cambios = eventos_lectura, 0
     for posicion, nueva in enumerate(nuevas):
         if nueva.get("estado") == "Baja":
             raise DatosIncompletos("Baja solo aplica a activos, no a componentes.")
@@ -150,25 +205,27 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha):
                 _evento(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion), datos["estado"], None, fecha)
                 eventos += 1
         if tabla == "tarjeta_red":
-            c, e = _reconciliar(cur, activo_id, "puerto_tarjeta_red", id_fila, puertos, fecha)
+            c, e = _reconciliar(cur, activo_id, "puerto_tarjeta_red", id_fila, puertos, fecha,
+                               proteger_lectura=proteger_lectura)
             cambios += c
             eventos += e
     for anterior in disponibles.values():
-        # Una fila ausente en una lectura SNMP no demuestra que un componente
-        # haya cambiado de estado. Conservar su último estado conocido evita
-        # registrar una Baja administrativa para discos, NIC y demás piezas.
-        if tabla != "chasis_slot":
+        if tabla in ("puerto_switch", "puerto_tarjeta_red"):
+            # No desaparecer puertos por un walk incompleto. Su estado solo
+            # cambia cuando SNMP reporta explícitamente ese puerto.
             continue
-        baja = "LIBRE"
-        datos_baja = {"estado": baja, **({"hostname_servidor": None} if tabla == "chasis_slot" else {})}
-        if any(anterior.get(k) != v for k, v in datos_baja.items()):
-            _actualizar_fila(cur, tabla, anterior["id"], anterior, datos_baja)
-            posicion = anteriores.index(anterior)
-            if anterior.get("estado") != baja:
-                _evento(cur, activo_id, tabla, _etiqueta(tabla, anterior, posicion), baja,
-                        anterior.get("estado"), fecha)
-                eventos += 1
-            cambios += 1
+        if tabla == "chasis_slot":
+            datos_libre = {"estado": "LIBRE", "hostname_servidor": None}
+            modificados = _actualizar_fila(cur, tabla, anterior["id"], anterior, datos_libre)
+            if modificados:
+                cambios += 1
+                if anterior.get("estado") != "LIBRE":
+                    _evento(cur, activo_id, tabla, _etiqueta(tabla, anterior, anteriores.index(anterior)),
+                            "LIBRE", anterior.get("estado"), fecha)
+                    eventos += 1
+            continue
+        _eliminar_componente(cur, tabla, anterior["id"], padre_id)
+        cambios += 1
     return cambios, eventos
 
 
@@ -185,9 +242,6 @@ def _retirar_discos_confirmados(cur, activo_id, ausentes, presentes, fecha):
     if len({fila["numero_serial"] for fila in filas}) != len(filas):
         raise DatosIncompletos("Hay discos duplicados con la misma serie.")
     for fila in filas:
-        registrar_evento_estado(cur, activo_id, "presencia", "Ausente",
-            f"Disco {fila['numero_serial']} retirado: bahía vacía confirmada por SNMP",
-            fecha, "disco", fila["numero_serial"])
         cur.execute("DELETE FROM disco WHERE id=%s AND activo_id=%s",
                     (fila["id"], activo_id))
     return len(filas)
@@ -274,6 +328,7 @@ def guardar_iteracion(config, referencia, ficha):
     if subtipo is None or subtipo not in ficha:
         raise DatosIncompletos("El tipo de activo consultado no es compatible.")
     metricas = construir_metricas(activo["tipo_activo"], ficha, fecha)
+    tablas_omitidas = []
     with conexion_bd(config) as db, db.cursor(cursor_factory=RealDictCursor) as cur:
         conexion = _bloquear_conexion(cur, referencia)
         if conexion["estado_conexion"] == "Inactivo":
@@ -305,20 +360,26 @@ def guardar_iteracion(config, referencia, ficha):
         componentes = ficha.get("componentes", {})
         if set(componentes) - set(COMPATIBLES[activo["tipo_activo"]]):
             raise DatosIncompletos("La ficha contiene componentes incompatibles.")
+        def proteger_lectura(tabla, padre_id, nuevas):
+            omitida, eventos_lectura = _proteger_lectura_vacia(cur, referencia.activo_id,
+                tabla, padre_id, nuevas, fecha, config.lecturas_vacias_para_baja)
+            if omitida and tabla not in tablas_omitidas:
+                tablas_omitidas.append(tabla)
+            return omitida, eventos_lectura
         for tabla, filas in componentes.items():
             if tabla == "chasis_slot":
                 filas = resolver_slots_por_serie(cur, filas, anterior["ubicacion"])
-            c, e = _reconciliar(cur, referencia.activo_id, tabla, referencia.activo_id, filas, fecha)
+            c, e = _reconciliar(cur, referencia.activo_id, tabla, referencia.activo_id, filas, fecha,
+                               proteger_lectura=proteger_lectura)
             cambios += c
             eventos += e
         if conexion["estado_conexion"] == "Activo" and \
                 anterior["estado_operativo"] == "Encendido" and \
-                activo["estado_operativo"] == "Encendido":
+                activo["estado_operativo"] == "Encendido" and "disco" not in tablas_omitidas:
             retirados = _retirar_discos_confirmados(cur, referencia.activo_id,
                 ficha.get("discos_ausentes", ()), componentes.get("disco", ()), fecha)
             cambios += retirados
-            eventos += retirados
-        if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes:
+        if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes and "chasis_slot" not in tablas_omitidas:
             _sincronizar_slots(cur, referencia.activo_id)
         guardar_metricas(db, referencia.activo_id, metricas)
         cur.execute("""UPDATE monitoreo_snmp SET estado_conexion='Activo',
@@ -328,7 +389,8 @@ def guardar_iteracion(config, referencia, ficha):
                 "Activo", "Conexión SNMP restablecida", fecha)
             eventos += 1
     return {"conexion_id": referencia.id, "activo_id": referencia.activo_id, "ok": True,
-            "cambios": cambios, "eventos": eventos, "metricas": len(metricas)}
+            "cambios": cambios, "eventos": eventos, "metricas": len(metricas),
+            "tablas_omitidas": tablas_omitidas}
 
 
 async def ejecutar_iteracion(config, conexion_id):

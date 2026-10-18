@@ -517,3 +517,26 @@ puertos locales disponibles y los cierran al terminar. Requieren `snmpsim`.
 Las pruebas de persistencia usan conexiones de prueba controladas para verificar
 SQL parametrizado, relaciones, commit y rollback. La creación y vinculación atómicas se verificaron además contra PostgreSQL local
 en un esquema aislado, incluyendo rollback ante fallo del vínculo y rechazo de repetición.
+
+## Reconciliación de componentes durante el monitoreo
+
+Las piezas reemplazables que dejan de aparecer en una lectura con elementos
+se eliminan físicamente de su tabla. Las piezas nuevas se insertan, y una pieza
+retirada que reaparece se registra de nuevo. No se generan eventos de Baja o
+Ausente por estos retiros; se mantienen los eventos de salud de piezas presentes.
+
+Una tabla completamente vacía con componentes registrados se conserva en la
+primera lectura. `LECTURAS_VACIAS_PARA_BAJA` configura cuántas lecturas vacías
+consecutivas se requieren para confirmar el retiro (por defecto, 2). Una lectura
+con elementos reinicia la confirmación, incluso cuando los datos son idénticos.
+La marca se guarda en `historico_estado` con campo `lectura_componentes`, sin
+crear tablas ni modificar el esquema. El resultado incluye `tablas_omitidas`.
+
+Los puertos de switch, puertos de NIC y slots del chasis conservan sus filas,
+incluidos puertos apagados y slots libres. La retirada confirmada de una NIC
+elimina primero sus puertos asociados. Los slots que se liberan conservan la
+fila y desvinculan el blade; una primera lectura vacía conserva esos vínculos.
+
+Las pruebas de `tests/integracion/test_reconciliacion_componentes.py` usan el
+esquema existente de una base `TEST_DATABASE_URL` cuyo nombre contenga `test`,
+y revierten los datos insertados por cada prueba al finalizar.

@@ -1,0 +1,32 @@
+# Contexto mínimo para las imágenes de FastAPI y del ETL periódico.
+# Quedan fuera tests/, scripts/, data/ (simuladores), mibs/, migrations/,
+# documentación, registros, respaldos, entornos y configuración del editor.
+**
+
+# Código compartido por los dos servicios, incluidas todas sus subcarpetas.
+!api/
+!api/**
+!etl/
+!etl/**
+!requirements.txt
+
+# Definiciones de construcción de la imagen.
+!Dockerfile
+!Dockerfile.*
+!.dockerignore
+
+# Excluir también archivos locales si aparecen dentro de api/ o etl/.
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.git/
+**/.env
+**/.env.*
+**/*.log
+**/*.bak
+**/*.backup
+**/*.dump

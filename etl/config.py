@@ -7,6 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import SecretStr
 
+LECTURAS_VACIAS_PARA_BAJA = 2
+
 @dataclass(frozen=True)
 class Configuracion:
     api_key: SecretStr = field(repr=False)
@@ -19,6 +21,7 @@ class Configuracion:
     redes_permitidas: tuple = ()
     database_url: SecretStr | None = field(default=None, repr=False)
     db_timeout: int = 5
+    lecturas_vacias_para_baja: int = LECTURAS_VACIAS_PARA_BAJA
 
 def cargar_configuracion():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -30,9 +33,10 @@ def cargar_configuracion():
         retries = int(os.getenv("SNMP_RETRIES", "1"))
         port = int(os.getenv("API_PORT", "8001"))
         db_timeout = int(os.getenv("DB_TIMEOUT", "5"))
+        lecturas_vacias = int(os.getenv("LECTURAS_VACIAS_PARA_BAJA", str(LECTURAS_VACIAS_PARA_BAJA)))
         networks = tuple(ip_network(s.strip()) for s in
                          os.getenv("SNMP_REDES_PERMITIDAS", "").split(",") if s.strip())
-        if not math.isfinite(timeout) or timeout <= 0 or retries < 0 or not 1 <= port <= 65535 or db_timeout <= 0:
+        if not math.isfinite(timeout) or timeout <= 0 or retries < 0 or not 1 <= port <= 65535 or db_timeout <= 0 or lecturas_vacias < 1:
             raise ValueError
     except ValueError:
         raise RuntimeError("Configuración de tiempos, puerto o redes inválida.") from None
@@ -40,4 +44,4 @@ def cargar_configuracion():
                          retries, os.getenv("API_HOST", "127.0.0.1"), port,
                          os.getenv("API_DOCS", "0") == "1", networks,
                          SecretStr(os.environ["DATABASE_URL"]) if os.getenv("DATABASE_URL", "").strip() else None,
-                         db_timeout)
+                         db_timeout, lecturas_vacias)
