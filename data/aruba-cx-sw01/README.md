@@ -27,9 +27,9 @@ Desde la raíz del repositorio:
 ```bash
 python data/run_responder.py \
   --v3-engine-id=800000000153573031 \
-  --v3-user=monitor_sw01 \
-  --v3-auth-key='2JePukZ17WBQg10i3J3U' --v3-auth-proto=SHA \
-  --v3-priv-key='ZynkEa6RTaPcFsqG1Oc5' --v3-priv-proto=AES \
+  --v3-user=HPE \
+  --v3-auth-key='Enterprise' --v3-auth-proto=SHA \
+  --v3-priv-key='Enterprise' --v3-priv-proto=AES \
   --agent-udpv4-endpoint=127.0.0.20:16600 \
   --data-dir="<ruta-absoluta-al-repo>\data\aruba-cx-sw01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
@@ -53,12 +53,12 @@ También se puede levantar junto con el resto de agentes vía
 
 | Parámetro | Valor |
 |---|---|
-| Usuario (`securityName`) | `monitor_sw01` |
+| Usuario (`securityName`) | `HPE` |
 | Nivel de seguridad | `authPriv` |
 | Protocolo de autenticación | `SHA` (usmHMACSHAAuthProtocol) |
-| Clave de autenticación | `2JePukZ17WBQg10i3J3U` |
+| Clave de autenticación | `Enterprise` |
 | Protocolo de privacidad | `AES` (usmAesCfb128Protocol) |
-| Clave de privacidad | `ZynkEa6RTaPcFsqG1Oc5` |
+| Clave de privacidad | `Enterprise` |
 | Engine ID (`--v3-engine-id`) | `800000000153573031` (fijo; `53573031` = hex de "SW01") |
 | **Contexto SNMPv3** | `public` |
 
@@ -77,9 +77,9 @@ python data/verify_agents.py
 O con `snmpget` (net-snmp) si está disponible:
 
 ```bash
-snmpget -v3 -u monitor_sw01 -l authPriv \
-  -a SHA -A '2JePukZ17WBQg10i3J3U' \
-  -x AES -X 'ZynkEa6RTaPcFsqG1Oc5' \
+snmpget -v3 -u HPE -l authPriv \
+  -a SHA -A 'Enterprise' \
+  -x AES -X 'Enterprise' \
   -n public \
   127.0.0.20:16600 1.3.6.1.2.1.1.1.0
 ```

@@ -13,8 +13,8 @@ los OID y unidades declarados por `ISM-STORAGE-SVC-MIB`,
 | Dato | Valor |
 |---|---|
 | IP y puerto | `127.0.0.43:17300` |
-| Usuario | `monitor_hwdorado` |
-| Clave de autenticación | `HwDoradoLab2026Auth` |
+| Usuario | `Administrator` |
+| Clave de autenticación | `Admin@9000` |
 | SNMPv3 | SHA / AES, contexto `public` |
 | Clave de privacidad | Igual a la de autenticación |
 

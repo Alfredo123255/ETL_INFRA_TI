@@ -6,6 +6,7 @@ from ipaddress import ip_network
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import SecretStr
+from etl.credenciales import cargar_llave
 
 LECTURAS_VACIAS_PARA_BAJA = 2
 
@@ -22,6 +23,7 @@ class Configuracion:
     database_url: SecretStr | None = field(default=None, repr=False)
     db_timeout: int = 5
     lecturas_vacias_para_baja: int = LECTURAS_VACIAS_PARA_BAJA
+    credential_key: SecretStr | None = field(default=None, repr=False)
 
 def cargar_configuracion():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -44,4 +46,4 @@ def cargar_configuracion():
                          retries, os.getenv("API_HOST", "127.0.0.1"), port,
                          os.getenv("API_DOCS", "0") == "1", networks,
                          SecretStr(os.environ["DATABASE_URL"]) if os.getenv("DATABASE_URL", "").strip() else None,
-                         db_timeout, lecturas_vacias)
+                         db_timeout, lecturas_vacias, cargar_llave())

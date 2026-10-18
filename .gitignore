@@ -8,3 +8,7 @@ __pycache__/
 # Entorno y resultados locales de pruebas.
 .venv/
 .pytest_cache/
+
+# Secretos de cifrado externos
+snmp_credentials.key
+snmp_credentials.backup.enc

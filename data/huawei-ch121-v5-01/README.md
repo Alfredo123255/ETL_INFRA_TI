@@ -10,8 +10,8 @@ ventiladores compartidos se consultan en el E9000.
 | Dato | Valor |
 |---|---|
 | IP y puerto | `127.0.0.41:17100` |
-| Usuario | `monitor_hwch121` |
-| Clave de autenticación | `HwCH121Lab2026Auth` |
+| Usuario | `Administrator` |
+| Clave de autenticación | `Admin@9000` |
 | SNMPv3 | SHA / AES, contexto `public` |
 | Clave de privacidad | Igual a la de autenticación |
 

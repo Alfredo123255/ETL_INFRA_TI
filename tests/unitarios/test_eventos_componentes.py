@@ -71,17 +71,20 @@ def test_cambio_de_estado_registra_un_evento_y_no_lo_duplica(
     ("ventilador", "numero_serial", "FAN-1"),
     ("tarjeta_red", "numero_serial", "NIC-1"),
 ])
-def test_componente_ausente_en_lectura_confirmada_se_elimina_sin_historial(monkeypatch, tabla, clave, valor):
+def test_componente_ausente_se_elimina_y_conserva_un_evento_de_retiro(monkeypatch, tabla, clave, valor):
     fila = {"id": 7, clave: valor, "estado": "Encendido"}
     eventos = preparar(monkeypatch, {tabla: [fila]})
 
-    assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (1, 0)
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (1, 1)
     assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (0, 0)
     assert fila["estado"] == "Encendido"
-    assert eventos == []
+    assert len(eventos) == 1
+    assert eventos[0][:3] == (19, "presencia", "Retirado")
+    assert eventos[0][4:] == (FECHA, tabla, valor)
+    assert "Componente retirado" in eventos[0][3]
 
 
-def test_disco_con_bahia_vacia_sale_del_inventario_sin_evento_de_retiro(monkeypatch):
+def test_disco_con_bahia_vacia_sale_del_inventario_con_evento_de_retiro(monkeypatch):
     class Cursor:
         def __init__(self):
             self.consultas = []
@@ -99,7 +102,9 @@ def test_disco_con_bahia_vacia_sale_del_inventario_sin_evento_de_retiro(monkeypa
     assert monitoreo._retirar_discos_confirmados(
         cur, 19, ["DISCO-1"], [{"numero_serial": "DISCO-2"}], FECHA) == 1
     assert any("DELETE FROM disco" in sql for sql, _ in cur.consultas)
-    assert eventos == []
+    assert len(eventos) == 1
+    assert eventos[0][1:4] == (19, "presencia", "Retirado")
+    assert eventos[0][5:] == (FECHA, "disco", "DISCO-1")
 
 
 def test_no_elimina_disco_sin_serie_identificable_o_aun_presente(monkeypatch):
@@ -141,9 +146,10 @@ def test_componente_nuevo_y_cambio_solo_de_modelo(monkeypatch):
     eventos = preparar(monkeypatch, {"disco": []})
     monkeypatch.setattr(monitoreo, "_insertar", lambda *_args: 8)
     nuevo = {"numero_serial": "DISCO-2", "modelo": "SSD", "estado": "Encendido"}
-    assert monitoreo._reconciliar(None, 19, "disco", 19, [nuevo], FECHA) == (1, 1)
-    assert eventos[0][2] == "Encendido"
-    assert "sin estado previo → Encendido" in eventos[0][3]
+    assert monitoreo._reconciliar(None, 19, "disco", 19, [nuevo], FECHA) == (1, 2)
+    assert [(e[1], e[2]) for e in eventos] == [
+        ("presencia", "Agregado"), ("estado", "Encendido")]
+    assert "sin estado previo → Encendido" in eventos[1][3]
 
     fila = {"id": 8, **nuevo}
     eventos = preparar(monkeypatch, {"disco": [fila]})
@@ -175,3 +181,48 @@ def test_evento_de_componente_guarda_tipo_identificador_y_fecha(monkeypatch):
         "campo": "estado", "valor_nuevo": "Degradado",
         "descripcion": "CPU degradada", "fecha_cambio": FECHA,
     })]
+
+
+@pytest.mark.parametrize("tabla", sorted(monitoreo.NOMBRES_COMPONENTE))
+def test_nueva_pieza_registra_incorporacion_una_vez(monkeypatch, tabla):
+    anteriores = {tabla: []}
+    eventos = preparar(monkeypatch, anteriores)
+
+    def insertar(_cur, destino, datos):
+        anteriores.setdefault(destino, []).append({"id": 8, **datos})
+        return 8
+
+    monkeypatch.setattr(monitoreo, "_insertar", insertar)
+    nueva = {"numero_serial": "PIEZA-2", "estado": "Encendido"}
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [nueva], FECHA) == (1, 2)
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [nueva], FECHA) == (0, 0)
+    presencia = [e for e in eventos if e[1] == "presencia"]
+    assert len(presencia) == 1
+    assert presencia[0][:3] == (19, "presencia", "Agregado")
+    assert presencia[0][4:] == (FECHA, tabla, "PIEZA-2")
+
+
+def test_pieza_nueva_sin_estado_tambien_registra_su_presencia(monkeypatch):
+    eventos = preparar(monkeypatch, {"disco": []})
+    monkeypatch.setattr(monitoreo, "_insertar", lambda *_args: 8)
+    assert monitoreo._reconciliar(None, 19, "disco", 19,
+        [{"numero_serial": "D-2", "estado": None}], FECHA) == (1, 1)
+    assert [(e[1], e[2]) for e in eventos] == [("presencia", "Agregado")]
+
+
+@pytest.mark.parametrize("tabla", sorted(monitoreo.ESTRUCTURALES))
+def test_nuevos_puertos_y_slots_no_generan_eventos_de_presencia(monkeypatch, tabla):
+    anteriores = {tabla: []}
+    eventos = preparar(monkeypatch, anteriores)
+
+    def insertar(_cur, destino, datos):
+        anteriores[destino].append({"id": 8, **datos})
+        return 8
+
+    monkeypatch.setattr(monitoreo, "_insertar", insertar)
+    datos = {"numero_slot": 1, "estado": "LIBRE"} if tabla == "chasis_slot" else {
+        "numero_puerto": "1", "estado": "Apagado"}
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [datos], FECHA) == (1, 1)
+    assert monitoreo._reconciliar(None, 19, tabla, 19, [], FECHA) == (0, 0)
+    assert len(anteriores[tabla]) == 1
+    assert all(e[1] == "estado" for e in eventos)

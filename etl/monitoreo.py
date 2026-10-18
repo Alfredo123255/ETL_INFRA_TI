@@ -5,12 +5,14 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import SecretStr
 from psycopg2.extras import RealDictCursor
 
+from etl.credenciales import descifrar
 from etl.ciclo import preparar_registro_activo
 from etl.db import conexion_bd
 from etl.errores import DatosIncompletos, ErrorExtraccion
 from etl.metricas import construir_metricas
 from etl.repositorio import (COLUMNAS, _insertar, guardar_metricas, registrar_evento_estado,
-    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO, CAMPO_LECTURA_COMPONENTES, resolver_slots_por_serie)
+    CAMPO_ESTADO_CONEXION, CAMPO_ESTADO_OPERATIVO, CAMPO_PRESENCIA,
+    resolver_slots_por_serie)
 from etl.snmp_cliente import ConexionSNMP
 from api.dto import separar_destino
 from api.seguridad import resolver_destino
@@ -24,6 +26,13 @@ COMPATIBLES = {
 }
 RELACION = {"puerto_switch": "switch_id", "chasis_slot": "chasis_id", "puerto_tarjeta_red": "tarjeta_red_id"}
 ESTRUCTURALES = {"puerto_switch", "puerto_tarjeta_red", "chasis_slot"}
+# Estado operativo del programador: solo se confirma después del commit del ciclo.
+CONTADORES_LECTURA = {}
+NOMBRES_COMPONENTE = {
+    "cpu": "CPU", "ram": "memoria RAM", "disco": "disco",
+    "tarjeta_red": "tarjeta de red", "fuente_poder": "fuente de poder",
+    "ventilador": "ventilador", "controladora_raid": "controladora RAID",
+}
 NUMERICOS_DOS_DECIMALES = {
     "activo": {"temperatura", "consumo_electrico_w"},
     "cpu": {"velocidad_ghz", "cache_l1_mb", "cache_l2_mb", "cache_l3_mb"},
@@ -47,13 +56,16 @@ class ConexionMonitoreo:
 def leer_conexion(config, conexion_id):
     """Lee credenciales actuales en cada iteración; no las expone en logs/resultados."""
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("""SELECT activo_id, ip_gestion, usuario, clave, clave_privacidad
-            FROM monitoreo_snmp WHERE id=%s AND activo_id IS NOT NULL
-            AND estado_conexion IN ('Activo', 'Sin conexión')""", (conexion_id,))
+        cur.execute("""SELECT m.activo_id, m.ip_gestion, m.usuario, m.clave, m.clave_privacidad
+            FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
+            WHERE m.id=%s AND a.estado_operativo <> 'Baja'
+            AND m.estado_conexion IN ('Activo', 'Sin conexión')""", (conexion_id,))
         row = cur.fetchone()
     if not row:
         return None
     activo_id, ip, usuario, clave, privacidad = row
+    clave = descifrar(clave, config.credential_key)
+    privacidad = descifrar(privacidad, config.credential_key, "clave_privacidad")
     if not ip or not usuario or not clave:
         raise DatosIncompletos("La conexión vinculada no tiene datos SNMP completos.")
     return ConexionMonitoreo(conexion_id, activo_id, ip, usuario, SecretStr(clave),
@@ -95,43 +107,30 @@ def _evento(cur, activo_id, tabla, etiqueta, estado, anterior, fecha):
     registrar_evento_estado(cur, activo_id, "estado", estado, descripcion, fecha, tabla, etiqueta)
 
 
-def _proteger_lectura_vacia(cur, activo_id, tabla, padre_id, nuevas, fecha, limite):
-    """Confirma vacíos consecutivos mediante marcas existentes; no cambia el esquema."""
-    # Cada NIC necesita un contador independiente para sus puertos.
-    etiqueta = f"tarjeta_red_id:{padre_id}" if tabla == "puerto_tarjeta_red" else None
-    cur.execute("""SELECT id, valor_nuevo FROM historico_estado
-        WHERE activo_id=%s AND componente_tipo=%s AND campo=%s
-          AND componente_sn IS NOT DISTINCT FROM %s ORDER BY id DESC LIMIT 1 FOR UPDATE""",
-        (activo_id, tabla, CAMPO_LECTURA_COMPONENTES, etiqueta))
-    marca = cur.fetchone()
-    consecutivas = int(marca["valor_nuevo"]) if marca and str(marca["valor_nuevo"]).isdigit() else 0
+def _evento_presencia(cur, activo_id, tabla, etiqueta, accion, fecha):
+    descripcion = f"Componente {accion.lower()}: {NOMBRES_COMPONENTE[tabla]} ({etiqueta})"
+    registrar_evento_estado(cur, activo_id, CAMPO_PRESENCIA, accion,
+                            descripcion, fecha, tabla, etiqueta)
+
+
+def _proteger_lectura_vacia(cur, tabla, padre_id, nuevas, limite, contadores):
+    """Confirma vacíos sin escribir contadores ni diagnósticos en el historial."""
+    clave = (tabla, padre_id)
     if nuevas:
-        if consecutivas:
-            # También se reinicia si los componentes no cambiaron de estado.
-            registrar_evento_estado(cur, activo_id, CAMPO_LECTURA_COMPONENTES, "0",
-                f"{tabla}: lectura recuperada, se reinicia la confirmación de vacíos",
-                fecha, tabla, etiqueta)
-            return False, 1
+        contadores.pop(clave, None)
         return False, 0
     anteriores = _filas(cur, tabla, RELACION.get(tabla, "activo_id"), padre_id)
     estado_inactivo = "LIBRE" if tabla == "chasis_slot" else "Baja"
     cantidad = sum(fila.get("estado") != estado_inactivo for fila in anteriores)
     if not cantidad:
+        contadores.pop(clave, None)
         return False, 0
-    consecutivas += 1
+    consecutivas = contadores.get(clave, 0) + 1
     if consecutivas >= limite:
-        if marca:
-            cur.execute("""UPDATE historico_estado SET valor_nuevo='0'
-                WHERE id=%s""", (marca["id"],))
+        contadores.pop(clave, None)
         return False, 0
-    descripcion = f"{tabla}: lectura vacía, se conservan {cantidad} componentes sin cambios"
-    if consecutivas > 1:
-        cur.execute("UPDATE historico_estado SET valor_nuevo=%s WHERE id=%s",
-                    (str(consecutivas), marca["id"]))
-        return True, 0
-    registrar_evento_estado(cur, activo_id, CAMPO_LECTURA_COMPONENTES, str(consecutivas),
-                            descripcion, fecha, tabla, etiqueta)
-    return True, 1
+    contadores[clave] = consecutivas
+    return True, 0
 
 
 def _eliminar_componente(cur, tabla, fila_id, padre_id):
@@ -201,6 +200,10 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lec
         else:
             id_fila = _insertar(cur, tabla, {**datos, relacion: padre_id})
             cambios += 1
+            if tabla not in ESTRUCTURALES:
+                _evento_presencia(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion),
+                                  "Agregado", fecha)
+                eventos += 1
             if datos.get("estado") is not None:
                 _evento(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion), datos["estado"], None, fecha)
                 eventos += 1
@@ -225,7 +228,10 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lec
                     eventos += 1
             continue
         _eliminar_componente(cur, tabla, anterior["id"], padre_id)
+        _evento_presencia(cur, activo_id, tabla,
+                          _etiqueta(tabla, anterior, anteriores.index(anterior)), "Retirado", fecha)
         cambios += 1
+        eventos += 1
     return cambios, eventos
 
 
@@ -244,6 +250,7 @@ def _retirar_discos_confirmados(cur, activo_id, ausentes, presentes, fecha):
     for fila in filas:
         cur.execute("DELETE FROM disco WHERE id=%s AND activo_id=%s",
                     (fila["id"], activo_id))
+        _evento_presencia(cur, activo_id, "disco", fila["numero_serial"], "Retirado", fecha)
     return len(filas)
 
 
@@ -282,13 +289,13 @@ def _sincronizar_slots(cur, chasis_id):
             cur.execute("UPDATE chasis_slot SET servidor_id=%s WHERE id=%s", (nuevo, slot["id"]))
 
 
-def _bloquear_conexion(cur, referencia):
+def _bloquear_conexion(cur, referencia, config):
     cur.execute("""SELECT activo_id, ip_gestion, usuario, clave, clave_privacidad, estado_conexion
         FROM monitoreo_snmp WHERE id=%s FOR UPDATE""", (referencia.id,))
     row = cur.fetchone()
     if not row or row["activo_id"] != referencia.activo_id or row["ip_gestion"] != referencia.ip_gestion or \
-       row["usuario"] != referencia.usuario or row["clave"] != referencia.clave.get_secret_value() or \
-       row["clave_privacidad"] != (referencia.clave_privacidad.get_secret_value() if referencia.clave_privacidad else None):
+       row["usuario"] != referencia.usuario or descifrar(row["clave"], config.credential_key) != referencia.clave.get_secret_value() or \
+       descifrar(row["clave_privacidad"], config.credential_key, "clave_privacidad") != (referencia.clave_privacidad.get_secret_value() if referencia.clave_privacidad else None):
         raise DatosIncompletos("La conexión cambió durante la consulta; se repetirá en el siguiente ciclo.")
     return row
 
@@ -296,8 +303,14 @@ def _bloquear_conexion(cur, referencia):
 def registrar_fallo(config, referencia, tipo):
     fecha = datetime.now(timezone.utc).replace(tzinfo=None)
     with conexion_bd(config) as db, db.cursor(cursor_factory=RealDictCursor) as cur:
-        actual = _bloquear_conexion(cur, referencia)
+        actual = _bloquear_conexion(cur, referencia, config)
         if actual["estado_conexion"] == "Inactivo":
+            return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
+        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
+        activo = cur.fetchone()
+        if activo is None:
+            raise DatosIncompletos("No existe el activo de la conexión SNMP.")
+        if activo["estado_operativo"] == "Baja":
             return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
         eventos = 0
         if actual["estado_conexion"] == "Activo":
@@ -306,17 +319,7 @@ def registrar_fallo(config, referencia, tipo):
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Sin conexión", f"Falló la consulta SNMP ({tipo})", fecha)
             eventos += 1
-        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
-        activo = cur.fetchone()
-        if activo is None:
-            raise DatosIncompletos("No existe el activo de la conexión SNMP.")
-        # Una pérdida de SNMP no demuestra que el equipo esté apagado.
-        # Degradado indica que su operación no se puede verificar.
-        if activo["estado_operativo"] == "Encendido":
-            cur.execute("UPDATE activo SET estado_operativo='Degradado' WHERE id=%s", (referencia.activo_id,))
-            registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_OPERATIVO,
-                "Degradado", f"Estado operativo no verificable por fallo SNMP ({tipo}): Encendido → Degradado", fecha)
-            eventos += 1
+        # Perder SNMP conserva el último estado operativo y la fecha de sus datos.
     return {"conexion_id": referencia.id, "ok": False, "eventos": eventos}
 
 
@@ -330,13 +333,16 @@ def guardar_iteracion(config, referencia, ficha):
     metricas = construir_metricas(activo["tipo_activo"], ficha, fecha)
     tablas_omitidas = []
     with conexion_bd(config) as db, db.cursor(cursor_factory=RealDictCursor) as cur:
-        conexion = _bloquear_conexion(cur, referencia)
+        conexion = _bloquear_conexion(cur, referencia, config)
         if conexion["estado_conexion"] == "Inactivo":
             return {"conexion_id": referencia.id, "omitida": True}
         cur.execute("SELECT * FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
         anterior = cur.fetchone()
+        if anterior and anterior["estado_operativo"] == "Baja":
+            return {"conexion_id": referencia.id, "omitida": True}
         if not anterior or anterior["tipo_activo"] != activo["tipo_activo"] or anterior["numero_serie"] != activo["numero_serie"]:
             raise DatosIncompletos("La identidad SNMP no coincide con el activo registrado.")
+        contadores = CONTADORES_LECTURA.get(referencia.activo_id, {}).copy()
         # Los campos administrativos, ubicación y clúster pertenecen al front.
         campos_activo = {k: v for k, v in activo.items() if k in COLUMNAS["activo"] and
                          k not in ("numero_serie", "ubicacion", "cluster", "ip_gestion") and v is not None}
@@ -361,8 +367,8 @@ def guardar_iteracion(config, referencia, ficha):
         if set(componentes) - set(COMPATIBLES[activo["tipo_activo"]]):
             raise DatosIncompletos("La ficha contiene componentes incompatibles.")
         def proteger_lectura(tabla, padre_id, nuevas):
-            omitida, eventos_lectura = _proteger_lectura_vacia(cur, referencia.activo_id,
-                tabla, padre_id, nuevas, fecha, config.lecturas_vacias_para_baja)
+            omitida, eventos_lectura = _proteger_lectura_vacia(cur,
+                tabla, padre_id, nuevas, config.lecturas_vacias_para_baja, contadores)
             if omitida and tabla not in tablas_omitidas:
                 tablas_omitidas.append(tabla)
             return omitida, eventos_lectura
@@ -379,6 +385,7 @@ def guardar_iteracion(config, referencia, ficha):
             retirados = _retirar_discos_confirmados(cur, referencia.activo_id,
                 ficha.get("discos_ausentes", ()), componentes.get("disco", ()), fecha)
             cambios += retirados
+            eventos += retirados
         if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes and "chasis_slot" not in tablas_omitidas:
             _sincronizar_slots(cur, referencia.activo_id)
         guardar_metricas(db, referencia.activo_id, metricas)
@@ -388,6 +395,10 @@ def guardar_iteracion(config, referencia, ficha):
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Activo", "Conexión SNMP restablecida", fecha)
             eventos += 1
+    if contadores:
+        CONTADORES_LECTURA[referencia.activo_id] = contadores
+    else:
+        CONTADORES_LECTURA.pop(referencia.activo_id, None)
     return {"conexion_id": referencia.id, "activo_id": referencia.activo_id, "ok": True,
             "cambios": cambios, "eventos": eventos, "metricas": len(metricas),
             "tablas_omitidas": tablas_omitidas}

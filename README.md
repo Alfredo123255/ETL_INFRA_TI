@@ -148,8 +148,9 @@ administrativos del front, añade las métricas a `metrica_historica` y escribe
 Esta columna y `monitoreo_snmp.fecha_ultima_actualizacion` guardan la misma marca
 UTC de la consulta exitosa. Los cambios de `estado_operativo` y de `estado` en
 componentes generan filas en `historico_estado`; los componentes nuevos o que dejan
-de reportarse también generan un evento. Un componente ausente queda con estado
-`Baja` (o `LIBRE` para un slot) y conserva su ID para el historial. Si falla SNMP
+de reportarse también generan un evento. Una pieza reemplazable ausente se elimina físicamente, tras confirmar la lectura;
+el evento de presencia se conserva. Los puertos y slots conservan sus filas,
+incluso apagados o libres. Si falla SNMP
 y la conexión estaba `Activo`, pasa a `Sin conexión` y se registra el evento; al
 recuperarse vuelve a `Activo` y se registra otro. Los fallos repetidos no duplican eventos. Si falla
 SNMP, no se modifican ni `activo.ultima_actualizacion` ni
@@ -423,9 +424,13 @@ Configurar `DATABASE_URL` y, opcionalmente, `DB_TIMEOUT` en `.env`. La prueba de
 conexión no requiere estas variables. Instalar las dependencias actualizadas de
 `requirements.txt`, incluido el controlador `psycopg2-binary`.
 
-La base debe tener aplicado el esquema R6 y la migración
-`migrations/001_monitoreo_clave_privacidad.sql`; el ETL no modifica el esquema
-automáticamente. Debe existir el datacenter y el clúster antes de crear el activo.
+Las instalaciones nuevas deben partir de `schema.sql`, exportado del esquema
+vigente: incluye `clave_privacidad VARCHAR(255)` y `activo.ultima_actualizacion`
+como `TIMESTAMP WITHOUT TIME ZONE`. Las instalaciones antiguas deben revisar
+`migrations/001_monitoreo_clave_privacidad.sql` y
+`migrations/002_activo_ultima_actualizacion_hora.sql` antes del despliegue.
+El ETL no aplica DDL automáticamente. `python -m etl.esquema` comprueba el contrato
+y el programador se detiene con un mensaje claro si falta alguna columna o tipo. Debe existir el datacenter y el clúster antes de crear el activo.
 
 Enviar `X-API-Key` y este cuerpo a `POST /api/etl/crear-activo`:
 
@@ -522,21 +527,85 @@ en un esquema aislado, incluyendo rollback ante fallo del vínculo y rechazo de 
 
 Las piezas reemplazables que dejan de aparecer en una lectura con elementos
 se eliminan físicamente de su tabla. Las piezas nuevas se insertan, y una pieza
-retirada que reaparece se registra de nuevo. No se generan eventos de Baja o
-Ausente por estos retiros; se mantienen los eventos de salud de piezas presentes.
+retirada que reaparece se registra de nuevo. Cada incorporación o retiro confirmado
+registra un evento en `historico_estado` con campo `presencia` y valor `Agregado`
+o `Retirado`, tipo de componente, identificador y fecha. El evento de retiro se
+conserva aunque la fila del componente se elimine. La escritura y el evento
+comparten la misma transacción: si falla el ciclo, ambos se revierten. Las lecturas
+posteriores sin cambios no duplican los eventos. Se mantienen los eventos de
+estado inicial y de salud; Baja sigue siendo exclusiva de activos.
 
 Una tabla completamente vacía con componentes registrados se conserva en la
 primera lectura. `LECTURAS_VACIAS_PARA_BAJA` configura cuántas lecturas vacías
 consecutivas se requieren para confirmar el retiro (por defecto, 2). Una lectura
 con elementos reinicia la confirmación, incluso cuando los datos son idénticos.
-La marca se guarda en `historico_estado` con campo `lectura_componentes`, sin
-crear tablas ni modificar el esquema. El resultado incluye `tablas_omitidas`.
+El contador se guarda en memoria y solo avanza al confirmar la transacción.
+Al reiniciar el programador comienza otra vez la confirmación conservadora.
+Los marcadores técnicos antiguos se ocultan en la consulta del historial; no se borran.
+No se crean tablas ni se modifica el esquema. El resultado incluye `tablas_omitidas`.
 
 Los puertos de switch, puertos de NIC y slots del chasis conservan sus filas,
 incluidos puertos apagados y slots libres. La retirada confirmada de una NIC
 elimina primero sus puertos asociados. Los slots que se liberan conservan la
 fila y desvinculan el blade; una primera lectura vacía conserva esos vínculos.
+Los puertos y slots no generan eventos de incorporación o retiro de piezas:
+conservan su estructura y sus eventos de estado. Completar el serial de una NIC
+existente tampoco genera una incorporación y un retiro artificiales.
 
 Las pruebas de `tests/integracion/test_reconciliacion_componentes.py` usan el
 esquema existente de una base `TEST_DATABASE_URL` cuyo nombre contenga `test`,
 y revierten los datos insertados por cada prueba al finalizar.
+
+
+## Cifrado de credenciales SNMP
+
+El backend escribe `clave` y `clave_privacidad` con AES-256-GCM, nonce aleatorio
+de 12 bytes y autenticación separada por campo. Python descifra únicamente al
+preparar una consulta SNMP. El formato compartido es `enc:v1:` seguido de Base64
+URL sin relleno de nonce, texto cifrado y tag de 16 bytes. Las respuestas HTTP,
+resultados y logs no incluyen las claves. El usuario SNMP se mantiene legible.
+
+Crear una llave aleatoria de 32 bytes codificada en Base64 URL y guardarla en un
+archivo externo con permisos limitados al usuario de servicio. Configurar en
+backend y ETL `SNMP_CREDENTIAL_KEY_FILE` con la ruta a ese mismo archivo; para
+contenedores, montarlo como secreto de solo lectura. También se admite
+`SNMP_CREDENTIAL_KEY` desde el gestor de secretos. Nunca subir la llave a Git,
+incluirla en una imagen ni almacenarla junto a una copia pública de la BD.
+
+Respaldar de forma privada la llave antes de convertir datos. Con backend y
+programador detenidos, ejecutar `python -m etl.migrar_credenciales` y después
+`python -m etl.migrar_credenciales --verificar`; debe indicar cero pendientes.
+La conversión es atómica e idempotente. No cambia tablas ni columnas. Iniciar
+backend, FastAPI y programador con la misma llave. Los lectores aceptan texto
+previo durante la conversión; las nuevas escrituras del backend siempre cifran.
+Una llave ausente, incorrecta o un valor manipulado no produce una consulta SNMP
+con el texto cifrado ni sobreescribe el inventario. El límite conservador de cada
+contraseña es 158 bytes UTF-8 para respetar el VARCHAR(255) existente.
+
+La llave permite recuperar las credenciales: conservarla y respaldarla fuera del
+repositorio. Cambiarla exige descifrar con la llave anterior y volver a cifrar;
+reemplazar simplemente el archivo dejaría inaccesibles las claves guardadas.
+El cifrado de almacenamiento no reemplaza TLS al desplegar las APIs.
+
+Los simuladores de este laboratorio usan HPE `HPE` / `Enterprise` (incluido Aruba)
+y Huawei `Administrator` / `Admin@9000`, con la misma clave para autenticación y
+privacidad. Son credenciales de demostración documentadas para este entorno.
+
+## Lectura después de editar una conexión
+
+Al guardar una edición validada, el backend envía un aviso PostgreSQL
+`etl_actualizar_conexion` con el ID de conexión. Se entrega después del commit;
+un rollback no solicita lectura. El programador lo revisa cada 2 segundos y
+consulta el activo sin esperar su frecuencia habitual. La lectura completa y
+exitosa actualiza datos, hora y conexión en la misma transacción. Una prueba de
+credenciales por sí sola no elimina el aviso de desconexión. El formulario espera
+hasta 30 segundos y recarga la ficha al detectar una lectura nueva; si sigue
+pendiente lo comunica. La frecuencia configurada se conserva. El programador debe
+estar encendido; al arrancar hace una lectura de todas las conexiones elegibles
+para recuperar avisos emitidos mientras estuvo detenido.
+
+El historial acordado incluye estados operativos y de conexión, presencia y salud
+de componentes, mantenimiento, baja y asignación de clúster. No se implementa una
+auditoría general de firmware, sistema operativo o datos administrativos (E6).
+La selección de alertas permanece según la decisión del autor; las fechas de
+historial y alertas se presentan explícitamente en la zona America/Lima.

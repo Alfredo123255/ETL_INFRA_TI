@@ -21,9 +21,9 @@ Desde la raíz del repositorio:
 ```bash
 python data/run_responder.py \
   --v3-engine-id=8000000001444c333830 \
-  --v3-user=monitor_dl380 \
-  --v3-auth-key='Kr7aY5nT2LdUco2B5IAZ' --v3-auth-proto=SHA \
-  --v3-priv-key='GpoJkRAhPOZg3vA4qHyT' --v3-priv-proto=AES \
+  --v3-user=HPE \
+  --v3-auth-key='Enterprise' --v3-auth-proto=SHA \
+  --v3-priv-key='Enterprise' --v3-priv-proto=AES \
   --agent-udpv4-endpoint=127.0.0.11:16100 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-dl380-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
@@ -45,12 +45,12 @@ falla con `FileNotFoundError` porque el subdirectorio intermedio no existe.
 
 | Parámetro | Valor |
 |---|---|
-| Usuario (`securityName`) | `monitor_dl380` |
+| Usuario (`securityName`) | `HPE` |
 | Nivel de seguridad | `authPriv` |
 | Protocolo de autenticación | `SHA` (usmHMACSHAAuthProtocol) |
-| Clave de autenticación | `Kr7aY5nT2LdUco2B5IAZ` |
+| Clave de autenticación | `Enterprise` |
 | Protocolo de privacidad | `AES` (usmAesCfb128Protocol) |
-| Clave de privacidad | `GpoJkRAhPOZg3vA4qHyT` |
+| Clave de privacidad | `Enterprise` |
 | Engine ID (`--v3-engine-id`) | `8000000001444c333830` (fijo, no `auto`, para que no cambie entre reinicios) |
 | **Contexto SNMPv3** | `public` |
 
@@ -72,9 +72,9 @@ python data/verify_agents.py
 O con `snmpget` (net-snmp) si está disponible:
 
 ```bash
-snmpget -v3 -u monitor_dl380 -l authPriv \
-  -a SHA -A 'Kr7aY5nT2LdUco2B5IAZ' \
-  -x AES -X 'GpoJkRAhPOZg3vA4qHyT' \
+snmpget -v3 -u HPE -l authPriv \
+  -a SHA -A 'Enterprise' \
+  -x AES -X 'Enterprise' \
   -n public \
   127.0.0.11:16100 1.3.6.1.2.1.1.1.0
 ```

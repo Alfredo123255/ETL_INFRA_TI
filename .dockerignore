@@ -30,3 +30,7 @@
 **/*.bak
 **/*.backup
 **/*.dump
+
+# Secretos de cifrado externos
+snmp_credentials.key
+snmp_credentials.backup.enc

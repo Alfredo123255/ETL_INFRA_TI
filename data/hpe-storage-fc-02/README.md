@@ -25,9 +25,9 @@ Desde la raíz del repositorio:
 ```bash
 python data/run_responder.py \
   --v3-engine-id=800000000153543032 \
-  --v3-user=monitor_storagefc02 \
-  --v3-auth-key='SMkMLpmciBdaLR9pfDux' --v3-auth-proto=SHA \
-  --v3-priv-key='2VcFacU3YHQ1CqwgAg7D' --v3-priv-proto=AES \
+  --v3-user=HPE \
+  --v3-auth-key='Enterprise' --v3-auth-proto=SHA \
+  --v3-priv-key='Enterprise' --v3-priv-proto=AES \
   --agent-udpv4-endpoint=127.0.0.31:16800 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-storage-fc-02" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
@@ -48,12 +48,12 @@ el resto de agentes vía [`data/start_agents.bat`](../start_agents.bat).
 
 | Parámetro | Valor |
 |---|---|
-| Usuario (`securityName`) | `monitor_storagefc02` |
+| Usuario (`securityName`) | `HPE` |
 | Nivel de seguridad | `authPriv` |
 | Protocolo de autenticación | `SHA` (usmHMACSHAAuthProtocol) |
-| Clave de autenticación | `SMkMLpmciBdaLR9pfDux` |
+| Clave de autenticación | `Enterprise` |
 | Protocolo de privacidad | `AES` (usmAesCfb128Protocol) |
-| Clave de privacidad | `2VcFacU3YHQ1CqwgAg7D` |
+| Clave de privacidad | `Enterprise` |
 | Engine ID (`--v3-engine-id`) | `800000000153543032` (fijo; `53543032` = hex de "ST02") |
 | **Contexto SNMPv3** | `public` |
 
@@ -71,9 +71,9 @@ python data/verify_agents.py
 O con `snmpget` (net-snmp):
 
 ```bash
-snmpget -v3 -u monitor_storagefc02 -l authPriv \
-  -a SHA -A 'SMkMLpmciBdaLR9pfDux' \
-  -x AES -X '2VcFacU3YHQ1CqwgAg7D' \
+snmpget -v3 -u HPE -l authPriv \
+  -a SHA -A 'Enterprise' \
+  -x AES -X 'Enterprise' \
   -n public \
   127.0.0.31:16800 1.3.6.1.2.1.1.1.0
 ```

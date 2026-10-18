@@ -25,10 +25,11 @@ COLUMNAS = {
 }
 
 # Vocabulario de historico_estado.campo: "estado_operativo", "estado_conexion",
-# "estado" de componentes y "lectura_componentes" (marca de lectura vacía o recuperada).
-# Las retiradas de componentes eliminan filas; no generan eventos de Baja.
+# "estado" y "presencia" de componentes, y "lectura_componentes" (marca de lectura vacía o recuperada).
+# Las retiradas eliminan filas y registran presencia=Retirado; Baja sigue reservada a activos.
 CAMPO_ESTADO_OPERATIVO = "estado_operativo"
 CAMPO_ESTADO_CONEXION = "estado_conexion"
+CAMPO_PRESENCIA = "presencia"
 CAMPO_LECTURA_COMPONENTES = "lectura_componentes"
 ESTADO_CONEXION_VINCULADA = "Activo"  # el valor que vincular() deja en monitoreo_snmp
 # Textos fijos: nunca incluyen IP, usuario, claves ni datos del equipo.

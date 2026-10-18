@@ -28,7 +28,7 @@ def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
     try:
         with conexion_bd(config) as conexion:
             if referencias:
-                bloquear_y_validar(conexion, referencias)
+                bloquear_y_validar(conexion, referencias, config)
             activo_id, cantidades = crear_activo(conexion, ficha)
             guardar_metricas(conexion, activo_id, metricas)
             # Solo eventos del activo. Los eventos de componentes (discos, puertos, fuentes, etc.)

@@ -9,8 +9,8 @@ son simulados; los OID Huawei y sus tipos proceden del MIB.
 | Dato | Valor |
 |---|---|
 | IP y puerto | `127.0.0.40:17000` |
-| Usuario | `monitor_hw2288` |
-| Clave de autenticación | `Hw2288Lab2026Auth` |
+| Usuario | `Administrator` |
+| Clave de autenticación | `Admin@9000` |
 | SNMPv3 | SHA / AES, contexto `public` |
 | Clave de privacidad | Igual a la de autenticación |
 

@@ -8,19 +8,22 @@ from datetime import datetime, timedelta, timezone
 from etl.config import cargar_configuracion
 from etl.db import conexion_bd, obtener_conexion
 from etl.monitoreo import ejecutar_iteracion
+from etl.esquema import verificar_columnas
 
 LOG = logging.getLogger(__name__)
 TICK_SEGUNDOS = 2
 LOCK_ID = 68342117
+CANAL_ACTUALIZACION = "etl_actualizar_conexion"
 
 
 def conexiones_programadas(config, conexion_id=None):
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("""SELECT id, frecuencia_actualizacion, fecha_ultima_actualizacion
-            FROM monitoreo_snmp WHERE activo_id IS NOT NULL
-              AND estado_conexion IN ('Activo', 'Sin conexión')
-              AND frecuencia_actualizacion > 0 AND (%s IS NULL OR id=%s)
-            ORDER BY id""", (conexion_id, conexion_id))
+        cur.execute("""SELECT m.id, m.frecuencia_actualizacion, m.fecha_ultima_actualizacion
+            FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
+            WHERE a.estado_operativo <> 'Baja'
+              AND m.estado_conexion IN ('Activo', 'Sin conexión')
+              AND m.frecuencia_actualizacion > 0 AND (%s IS NULL OR m.id=%s)
+            ORDER BY m.id""", (conexion_id, conexion_id))
         return cur.fetchall()
 
 
@@ -30,6 +33,26 @@ def _vencida(ultima, frecuencia, ahora):
     if ultima.tzinfo is not None:
         ultima = ultima.astimezone(timezone.utc).replace(tzinfo=None)
     return ultima + timedelta(seconds=frecuencia) <= ahora
+
+
+def solicitudes_inmediatas(guardia):
+    """NOTIFY se entrega al confirmar la edición; solo transporta el id, nunca claves."""
+    guardia.poll()
+    solicitudes = set()
+    while guardia.notifies:
+        aviso = guardia.notifies.pop(0)
+        if aviso.channel != CANAL_ACTUALIZACION:
+            continue
+        valor = aviso.payload
+        if valor.isascii() and valor.isdigit() and len(valor) <= 19 and int(valor) > 0:
+            solicitudes.add(int(valor))
+    return solicitudes
+
+
+def conexiones_vencidas(filas, intentos, ahora, solicitudes=()):
+    solicitudes = set(solicitudes)
+    return [i for i, frecuencia, ultima in filas if i in solicitudes or
+            _vencida(max(filter(None, (ultima, intentos.get(i))), default=None), frecuencia, ahora)]
 
 
 async def _ejecutar(config, ids):
@@ -56,18 +79,25 @@ async def iniciar_programador(config, *, una_vez=False, conexion_id=None):
     guardia = obtener_conexion(config)
     try:
         guardia.autocommit = True
+        verificar_columnas(guardia)
         with guardia.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_ID,))
             if not cur.fetchone()[0]:
                 raise RuntimeError("Ya hay un programador ETL en ejecución.")
+            cur.execute("LISTEN etl_actualizar_conexion")
         intentos = {}
+        arranque = True
         while True:
             ahora = datetime.now(timezone.utc).replace(tzinfo=None)
             filas = conexiones_programadas(config, conexion_id)
             vigentes = {fila[0] for fila in filas}
             intentos = {i: fecha for i, fecha in intentos.items() if i in vigentes}
-            vencidas = [i for i, frecuencia, ultima in filas
-                        if _vencida(max(filter(None, (ultima, intentos.get(i))), default=None), frecuencia, ahora)]
+            solicitudes = solicitudes_inmediatas(guardia)
+            if arranque:
+                # Recupera también los avisos emitidos mientras el programador estaba detenido.
+                solicitudes.update(vigentes)
+                arranque = False
+            vencidas = conexiones_vencidas(filas, intentos, ahora, solicitudes)
             if vencidas:
                 await _ejecutar(config, vencidas)
                 intentos.update({i: datetime.now(timezone.utc).replace(tzinfo=None) for i in vencidas})

@@ -18,6 +18,7 @@ pytestmark = pytest.mark.integracion
 
 @pytest.fixture
 def entorno(monkeypatch):
+    monkeypatch.setattr(monitoreo, "CONTADORES_LECTURA", {})
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("Falta TEST_DATABASE_URL")
@@ -58,6 +59,9 @@ def entorno(monkeypatch):
                 elif tipo == "CHASIS":
                     cur.execute("INSERT INTO chasis_blade(id,cantidad_slots) VALUES (%s,2)", (activo_id,))
                     datos_subtipo, tabla = {"cantidad_slots": 2}, "chasis_blade"
+                elif tipo == "STORAGE":
+                    cur.execute("INSERT INTO storage(id) VALUES (%s)", (activo_id,))
+                    datos_subtipo, tabla = {}, "storage"
                 else:
                     cur.execute("INSERT INTO switch(id) VALUES (%s)", (activo_id,))
                     datos_subtipo, tabla = {}, "switch"
@@ -100,12 +104,17 @@ def test_vacia_conserva_segunda_elimina_y_reinstalacion_inserta(entorno):
     r = entorno.guardar(ref, ficha, {"disco": []})
     assert r["tablas_omitidas"] == ["disco"]
     assert entorno.discos(ref.activo_id) == [("D1",), ("D2",)]
+    assert entorno.sql("SELECT componente_sn FROM historico_estado WHERE activo_id=%s AND campo='presencia' AND valor_nuevo='Retirado'", (ref.activo_id,)) == []
     r = entorno.guardar(ref, ficha, {"disco": []})
     assert r["tablas_omitidas"] == []
     assert entorno.discos(ref.activo_id) == []
+    assert entorno.sql("SELECT componente_sn FROM historico_estado WHERE activo_id=%s AND campo='presencia' AND valor_nuevo='Retirado' ORDER BY componente_sn", (ref.activo_id,)) == [("D1",), ("D2",)]
     assert entorno.sql("SELECT campo,valor_nuevo FROM historico_estado WHERE activo_id=%s AND campo IN ('presencia','estado') AND valor_nuevo IN ('Baja','Ausente')", (ref.activo_id,)) == []
+    assert entorno.guardar(ref, ficha, {"disco": []})["eventos"] == 0
     entorno.guardar(ref, ficha, {"disco": [DISCOS[0]]})
     assert entorno.discos(ref.activo_id) == [("D1",)]
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo='presencia' AND valor_nuevo='Agregado' AND componente_sn='D1'", (ref.activo_id,)) == [(2,)]
+    assert entorno.guardar(ref, ficha, {"disco": [DISCOS[0]]})["eventos"] == 0
 
 
 def test_recuperacion_identica_reinicia_y_lista_parcial_elimina(entorno):
@@ -180,10 +189,12 @@ def test_rollback_si_componentes_incompatibles(entorno):
 def test_error_despues_de_retirar_componente_revierte_el_borrado(entorno):
     ref, ficha = entorno.crear()
     entorno.guardar(ref, ficha, {"disco": DISCOS})
+    eventos_antes = entorno.sql("SELECT campo,valor_nuevo,componente_sn FROM historico_estado WHERE activo_id=%s ORDER BY id", (ref.activo_id,))
     with pytest.raises(monitoreo.DatosIncompletos, match="Baja solo aplica a activos"):
         entorno.guardar(ref, ficha, {"disco": [DISCOS[0]],
             "ram": [{"numero_serial": "R1", "estado": "Baja"}]})
     assert entorno.discos(ref.activo_id) == [("D1",), ("D2",)]
+    assert entorno.sql("SELECT campo,valor_nuevo,componente_sn FROM historico_estado WHERE activo_id=%s ORDER BY id", (ref.activo_id,)) == eventos_antes
 
 
 def test_confirmacion_puertos_independiente_por_tarjeta(entorno):
@@ -195,3 +206,75 @@ def test_confirmacion_puertos_independiente_por_tarjeta(entorno):
     assert entorno.guardar(ref, ficha, {"tarjeta_red": nics})["tablas_omitidas"] == ["puerto_tarjeta_red"]
     assert entorno.guardar(ref, ficha, {"tarjeta_red": nics})["tablas_omitidas"] == []
     assert len(entorno.sql("SELECT p.id FROM puerto_tarjeta_red p JOIN tarjeta_red n ON n.id=p.tarjeta_red_id WHERE n.activo_id=%s", (ref.activo_id,))) == 2
+
+
+@pytest.mark.parametrize("tipo,tabla", [
+    (tipo, tabla) for tipo, tablas in monitoreo.COMPATIBLES.items()
+    for tabla in tablas if tabla not in monitoreo.ESTRUCTURALES
+])
+def test_agregado_y_retiro_se_conservan_sin_duplicarse_en_todos_los_tipos(entorno, tipo, tabla):
+    ref, ficha = entorno.crear(tipo)
+    piezas = [{"numero_serial": serie, "estado": "Encendido"} for serie in ("P1", "P2", "P3")]
+    entorno.guardar(ref, ficha, {tabla: piezas[:2]})
+    assert entorno.guardar(ref, ficha, {tabla: piezas[:2]})["eventos"] == 0
+    resultado = entorno.guardar(ref, ficha, {tabla: piezas[1:]})
+    assert resultado["eventos"] == 3  # incorporación, estado inicial y retiro
+    assert entorno.sql(f"SELECT numero_serial FROM {tabla} WHERE activo_id=%s ORDER BY numero_serial", (ref.activo_id,)) == [("P2",), ("P3",)]
+    eventos = entorno.sql("""SELECT componente_tipo,componente_sn,valor_nuevo,fecha_cambio
+        FROM historico_estado WHERE activo_id=%s AND campo='presencia' ORDER BY id""", (ref.activo_id,))
+    assert [(e[0], e[1], e[2]) for e in eventos] == [
+        (tabla, "P1", "Agregado"), (tabla, "P2", "Agregado"),
+        (tabla, "P3", "Agregado"), (tabla, "P1", "Retirado")]
+    assert all(isinstance(e[3], datetime) for e in eventos)
+    assert entorno.guardar(ref, ficha, {tabla: piezas[1:]})["eventos"] == 0
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo='presencia'", (ref.activo_id,)) == [(4,)]
+
+
+def test_retiro_de_tarjeta_deja_su_evento_y_no_un_retiro_por_cada_puerto(entorno):
+    ref, ficha = entorno.crear()
+    nics = [{"numero_serial": serie, "estado": "Encendido", "puertos": [
+        {"numero_puerto": "1", "estado": "Apagado"}]} for serie in ("N1", "N2")]
+    entorno.guardar(ref, ficha, {"tarjeta_red": nics})
+    resultado = entorno.guardar(ref, ficha, {"tarjeta_red": nics[1:]})
+    assert resultado["eventos"] == 1
+    assert entorno.sql("SELECT numero_serial FROM tarjeta_red WHERE activo_id=%s", (ref.activo_id,)) == [("N2",)]
+    assert entorno.sql("SELECT count(*) FROM puerto_tarjeta_red p JOIN tarjeta_red n ON n.id=p.tarjeta_red_id WHERE n.activo_id=%s", (ref.activo_id,)) == [(1,)]
+    assert entorno.sql("SELECT componente_tipo,componente_sn FROM historico_estado WHERE activo_id=%s AND campo='presencia' AND valor_nuevo='Retirado'", (ref.activo_id,)) == [("tarjeta_red", "N1")]
+
+
+def test_confirmacion_revertida_no_se_cuenta_y_no_escribe_diagnosticos(entorno):
+    ref, ficha = entorno.crear()
+    entorno.guardar(ref, ficha, {"disco": DISCOS})
+    with pytest.raises(monitoreo.DatosIncompletos):
+        entorno.guardar(ref, ficha, {"disco": [], "ram": [{"numero_serial": "R", "estado": "Baja"}]})
+    assert entorno.guardar(ref, ficha, {"disco": []})["tablas_omitidas"] == ["disco"]
+    assert len(entorno.discos(ref.activo_id)) == 2
+    assert entorno.guardar(ref, ficha, {"disco": []})["tablas_omitidas"] == []
+    assert entorno.discos(ref.activo_id) == []
+    assert entorno.sql("SELECT id FROM historico_estado WHERE activo_id=%s AND campo='lectura_componentes'", (ref.activo_id,)) == []
+
+
+def test_reinicio_del_programador_exige_nueva_confirmacion(entorno):
+    ref, ficha = entorno.crear()
+    entorno.guardar(ref, ficha, {"disco": DISCOS})
+    assert entorno.guardar(ref, ficha, {"disco": []})["tablas_omitidas"] == ["disco"]
+    monitoreo.CONTADORES_LECTURA.clear()
+    assert entorno.guardar(ref, ficha, {"disco": []})["tablas_omitidas"] == ["disco"]
+    assert len(entorno.discos(ref.activo_id)) == 2
+
+
+def test_baja_no_se_reactiva_aunque_la_conexion_quede_activa(entorno, monkeypatch):
+    from etl.programador import conexiones_programadas
+
+    ref, ficha = entorno.crear()
+    entorno.sql("UPDATE activo SET estado_operativo='Baja' WHERE id=%s", (ref.activo_id,))
+    assert entorno.guardar(ref, ficha, {"disco": DISCOS}) == {"conexion_id": ref.id, "omitida": True}
+    assert monitoreo.registrar_fallo(entorno.config, ref, "timeout")["eventos"] == 0
+    assert monitoreo.leer_conexion(entorno.config, ref.id) is None
+    # Este entorno comparte una transacción para que cada prueba revierta sus datos.
+    import etl.programador as programador
+    monkeypatch.setattr(programador, "conexion_bd", monitoreo.conexion_bd)
+    assert conexiones_programadas(entorno.config, ref.id) == []
+    assert entorno.sql("SELECT estado_operativo FROM activo WHERE id=%s", (ref.activo_id,)) == [("Baja",)]
+    assert entorno.sql("SELECT estado_conexion FROM monitoreo_snmp WHERE id=%s", (ref.id,)) == [("Activo",)]
+    assert entorno.sql("SELECT id FROM historico_estado WHERE activo_id=%s", (ref.activo_id,)) == []

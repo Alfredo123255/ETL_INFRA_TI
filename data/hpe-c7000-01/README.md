@@ -17,9 +17,9 @@ Desde la raíz del repositorio:
 ```bash
 python data/run_responder.py \
   --v3-engine-id=80000000014337303030 \
-  --v3-user=monitor_c7000 \
-  --v3-auth-key='cy8EcO4BePPAN9Os5zts' --v3-auth-proto=SHA \
-  --v3-priv-key='NR2yILtdOtWShA70stgf' --v3-priv-proto=AES \
+  --v3-user=HPE \
+  --v3-auth-key='Enterprise' --v3-auth-proto=SHA \
+  --v3-priv-key='Enterprise' --v3-priv-proto=AES \
   --agent-udpv4-endpoint=127.0.0.15:16300 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-c7000-01" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
@@ -40,12 +40,12 @@ rutas relativas snmpsim arma la ruta del índice `.dbm` mal y falla con `FileNot
 
 | Parámetro | Valor |
 |---|---|
-| Usuario (`securityName`) | `monitor_c7000` |
+| Usuario (`securityName`) | `HPE` |
 | Nivel de seguridad | `authPriv` |
 | Protocolo de autenticación | `SHA` (usmHMACSHAAuthProtocol) |
-| Clave de autenticación | `cy8EcO4BePPAN9Os5zts` |
+| Clave de autenticación | `Enterprise` |
 | Protocolo de privacidad | `AES` (usmAesCfb128Protocol) |
-| Clave de privacidad | `NR2yILtdOtWShA70stgf` |
+| Clave de privacidad | `Enterprise` |
 | Engine ID (`--v3-engine-id`) | `80000000014337303030` (fijo; los últimos 5 bytes son `"C7000"` en ASCII, mismo patrón mnemotécnico que `...444c333830`="DL380" y `...444c333630`="DL360") |
 | **Contexto SNMPv3** | `public` |
 
@@ -65,9 +65,9 @@ python data/verify_agents.py
 O con `snmpget` (net-snmp) si está disponible:
 
 ```bash
-snmpget -v3 -u monitor_c7000 -l authPriv \
-  -a SHA -A 'cy8EcO4BePPAN9Os5zts' \
-  -x AES -X 'NR2yILtdOtWShA70stgf' \
+snmpget -v3 -u HPE -l authPriv \
+  -a SHA -A 'Enterprise' \
+  -x AES -X 'Enterprise' \
   -n public \
   127.0.0.15:16300 1.3.6.1.2.1.1.1.0
 ```

@@ -9,8 +9,8 @@ la 1 contiene `huawei-ch121-v5-01` (serie `HWCH121V5001`) y la 2 está libre.
 | Dato | Valor |
 |---|---|
 | IP y puerto | `127.0.0.42:17200` |
-| Usuario | `monitor_hwe9000` |
-| Clave de autenticación | `HwE9000Lab2026Auth` |
+| Usuario | `Administrator` |
+| Clave de autenticación | `Admin@9000` |
 | SNMPv3 | SHA / AES, contexto `public` |
 | Clave de privacidad | Igual a la de autenticación |
 

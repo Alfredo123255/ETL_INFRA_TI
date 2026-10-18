@@ -19,7 +19,7 @@ con los demás agentes. `data\stop_agents.bat` los detiene.
 Para iniciarlo individualmente:
 
 ```bat
-.\.venv\Scripts\python.exe -B data\run_responder.py --v3-engine-id=8000000001424c433033 --v3-user=monitor_bl460c03 --v3-auth-key=Fq8DzT4mWpK7vN2sRb6C --v3-auth-proto=SHA --v3-priv-key=Jr5XeA9pLcQ2tW8mHk4V --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.16:16900 --data-dir=data\hpe-bl460c-03 --cache-dir=logs\snmpsim-cache
+.\.venv\Scripts\python.exe -B data\run_responder.py --v3-engine-id=8000000001424c433033 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.16:16900 --data-dir=data\hpe-bl460c-03 --cache-dir=logs\snmpsim-cache
 ```
 
 El formulario de registro necesita IP y puerto, usuario SNMPv3 y clave de

@@ -16,7 +16,8 @@ from etl.programador import conexiones_programadas
 pytestmark = pytest.mark.integracion
 
 
-def test_fallo_no_mueve_fechas_y_registra_una_sola_transicion():
+@pytest.mark.parametrize("estado", ["Encendido", "Apagado", "Degradado"])
+def test_fallo_conserva_estado_y_fechas_y_registra_una_sola_transicion(estado):
     url = os.environ.get("TEST_DATABASE_URL", "").strip()
     if not url:
         pytest.skip("Falta TEST_DATABASE_URL")
@@ -30,22 +31,24 @@ def test_fallo_no_mueve_fechas_y_registra_una_sola_transicion():
         with psycopg2.connect(url) as db, db.cursor() as cur:
             cur.execute("INSERT INTO datacenters(nombre) VALUES (%s)", (marca,))
             cur.execute("""INSERT INTO activo(numero_serie,hostname,ubicacion,tipo_activo,
-                estado_operativo,ultima_actualizacion) VALUES (%s,%s,%s,'SWITCH','Encendido',%s)
-                RETURNING id""", (marca, marca, marca, fecha_activo))
+                estado_operativo,ultima_actualizacion) VALUES (%s,%s,%s,'SWITCH',%s,%s)
+                RETURNING id""", (marca, marca, marca, estado, fecha_activo))
             activo_id = cur.fetchone()[0]
             cur.execute("""INSERT INTO monitoreo_snmp(ip_gestion,usuario,clave,
                 frecuencia_actualizacion,estado_conexion,fecha_ultima_actualizacion,activo_id)
                 VALUES ('127.0.0.1:1','test','test',60,'Activo',%s,%s) RETURNING id""",
                 (fecha_conexion, activo_id))
             conexion_id = cur.fetchone()[0]
+            cur.execute("SELECT estado_operativo,ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            estado_y_fecha_antes = cur.fetchone()
         referencia = ConexionMonitoreo(conexion_id, activo_id, "127.0.0.1:1",
                                        "test", SecretStr("test"), None)
         config = Configuracion(SecretStr("test"), database_url=SecretStr(url))
-        assert registrar_fallo(config, referencia, "timeout")["eventos"] == 2
+        assert registrar_fallo(config, referencia, "timeout")["eventos"] == 1
         assert registrar_fallo(config, referencia, "timeout")["eventos"] == 0
         with psycopg2.connect(url) as db, db.cursor() as cur:
             cur.execute("SELECT estado_operativo,ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
-            assert cur.fetchone() == ("Degradado", fecha_activo)
+            assert cur.fetchone() == estado_y_fecha_antes
             cur.execute("""SELECT estado_conexion,fecha_ultima_actualizacion
                 FROM monitoreo_snmp WHERE id=%s""", (conexion_id,))
             assert cur.fetchone() == ("Sin conexión", fecha_conexion)
@@ -53,7 +56,6 @@ def test_fallo_no_mueve_fechas_y_registra_una_sola_transicion():
                 WHERE activo_id=%s GROUP BY campo,valor_nuevo""", (activo_id,))
             assert sorted(cur.fetchall()) == [
                 ("estado_conexion", "Sin conexión", 1),
-                ("estado_operativo", "Degradado", 1),
             ]
             cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Inactivo' WHERE id=%s", (conexion_id,))
         assert leer_conexion(config, conexion_id) is None

@@ -35,9 +35,9 @@ Desde la raíz del repositorio:
 ```bash
 python data/run_responder.py \
   --v3-engine-id=8000000001424c433032 \
-  --v3-user=monitor_bl460c02 \
-  --v3-auth-key='Ht4RxQ8kMbZ3vNp6Ld1J' --v3-auth-proto=SHA \
-  --v3-priv-key='Sc9WjE2yTfL7uKq4Gz5V' --v3-priv-proto=AES \
+  --v3-user=HPE \
+  --v3-auth-key='Enterprise' --v3-auth-proto=SHA \
+  --v3-priv-key='Enterprise' --v3-priv-proto=AES \
   --agent-udpv4-endpoint=127.0.0.14:16500 \
   --data-dir="<ruta-absoluta-al-repo>\data\hpe-bl460c-02" \
   --cache-dir="<ruta-absoluta-al-repo>\logs\snmpsim-cache"
@@ -59,12 +59,12 @@ agentes: con rutas relativas snmpsim arma la ruta del índice `.dbm` mal y falla
 
 | Parámetro | Valor |
 |---|---|
-| Usuario (`securityName`) | `monitor_bl460c02` |
+| Usuario (`securityName`) | `HPE` |
 | Nivel de seguridad | `authPriv` |
 | Protocolo de autenticación | `SHA` (usmHMACSHAAuthProtocol) |
-| Clave de autenticación | `Ht4RxQ8kMbZ3vNp6Ld1J` |
+| Clave de autenticación | `Enterprise` |
 | Protocolo de privacidad | `AES` (usmAesCfb128Protocol) |
-| Clave de privacidad | `Sc9WjE2yTfL7uKq4Gz5V` |
+| Clave de privacidad | `Enterprise` |
 | Engine ID (`--v3-engine-id`) | `8000000001424c433032` (fijo; los últimos 5 bytes son `"BLC02"` en ASCII, mismo patrón mnemotécnico que `...444c333830`="DL380", `...444c333630`="DL360", `...4337303030`="C7000" y `...424c433031`="BLC01") |
 | **Contexto SNMPv3** | `public` |
 
@@ -84,9 +84,9 @@ python data/verify_agents.py
 O con `snmpget` (net-snmp) si está disponible:
 
 ```bash
-snmpget -v3 -u monitor_bl460c02 -l authPriv \
-  -a SHA -A 'Ht4RxQ8kMbZ3vNp6Ld1J' \
-  -x AES -X 'Sc9WjE2yTfL7uKq4Gz5V' \
+snmpget -v3 -u HPE -l authPriv \
+  -a SHA -A 'Enterprise' \
+  -x AES -X 'Enterprise' \
   -n public \
   127.0.0.14:16500 1.3.6.1.2.1.1.1.0
 ```
