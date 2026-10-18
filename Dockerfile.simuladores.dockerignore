@@ -1,0 +1,18 @@
+# Solo datos y código necesarios para los 17 agentes; sin MIB, pruebas o scripts de Windows.
+**
+!requirements-simuladores.txt
+!requirements-constraints.txt
+!Dockerfile.simuladores
+!Dockerfile.simuladores.dockerignore
+!data/
+!data/agentes-docker.json
+!data/servicio_agentes.py
+!data/run_responder.py
+!data/variation/
+!data/variation/numeric.py
+!data/*/
+!data/*/public.snmprec
+**/__pycache__/
+**/*.py[cod]
+**/.env*
+**/*.key

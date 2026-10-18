@@ -17,7 +17,7 @@ if errorlevel 1 (
 echo Repo: %REPO_ROOT%
 echo.
 echo Iniciando hpe-dl380-01 en 127.0.0.11:16100 ...
-start "hpe-dl380-01 (127.0.0.11:16100)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001444c333830 --v3-user=HPE --v3-auth-key=Admin@9000 --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.11:16100 --data-dir="%REPO_ROOT%\data\hpe-dl380-01" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-dl380-01 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+start "hpe-dl380-01 (127.0.0.11:16100)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001444c333830 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.11:16100 --data-dir="%REPO_ROOT%\data\hpe-dl380-01" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-dl380-01 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
 timeout /t 2 /nobreak >nul
 
 echo Iniciando hpe-dl360-01 en 127.0.0.12:16200 ...

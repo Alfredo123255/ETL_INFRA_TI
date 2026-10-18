@@ -9,6 +9,11 @@
 !etl/
 !etl/**
 !requirements.txt
+!requirements-runtime.txt
+!requirements-constraints.txt
+!docker/
+!docker/entrypoint.py
+!docker/preflight.py
 
 # Definiciones de construcción de la imagen.
 !Dockerfile
@@ -34,3 +39,7 @@
 # Secretos de cifrado externos
 snmp_credentials.key
 snmp_credentials.backup.enc
+**/CLAVES-DESPLIEGUE-PRIVADO.md
+**/tests/
+**/__tests__/
+**/test_*.py

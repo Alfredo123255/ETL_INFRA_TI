@@ -1,0 +1,9 @@
+# Dependencias directas verificadas en el entorno actual; sin pruebas ni simuladores.
+-c requirements-constraints.txt
+pysnmp==6.2.6
+fastapi==0.142.1
+uvicorn==0.54.0
+pydantic==2.14.1
+python-dotenv==1.2.4
+psycopg2-binary==2.9.13
+cryptography==50.0.2

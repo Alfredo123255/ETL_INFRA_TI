@@ -1,0 +1,129 @@
+name: infra-ti
+
+x-python-env: &python-env
+  DB_HOST: ${DB_HOST:?Completa DB_HOST en .env}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_NAME: ${DB_NAME:?Completa DB_NAME en .env}
+  DB_USERNAME: ${DB_USERNAME:?Completa DB_USERNAME en .env}
+  DB_PASSWORD: ${DB_PASSWORD:?Completa DB_PASSWORD en .env}
+  PGSSLMODE: verify-full
+  PGSSLROOTCERT: /run/certs/postgres-ca.pem
+  ETL_API_KEY: ${ETL_API_KEY:?Completa ETL_API_KEY en .env}
+  SNMP_CREDENTIAL_KEY_FILE: /run/secrets/snmp_credentials.key
+  SNMP_CONTEXT_NAME: public
+  SNMP_REDES_PERMITIDAS: 127.0.0.0/8
+  SNMP_TIMEOUT: "3"
+  SNMP_RETRIES: "1"
+  DB_TIMEOUT: "10"
+  LECTURAS_VACIAS_PARA_BAJA: "2"
+  API_HOST: 127.0.0.1
+  API_PORT: "8001"
+  API_DOCS: "0"
+
+x-service: &service
+  network_mode: host
+  restart: unless-stopped
+  init: true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  simuladores:
+    <<: *service
+    build:
+      context: ${ETL_CONTEXT:-../etl}
+      dockerfile: Dockerfile.simuladores
+    stop_grace_period: 20s
+
+  fastapi:
+    <<: *service
+    build:
+      context: ${ETL_CONTEXT:-../etl}
+      target: fastapi
+    environment: *python-env
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes:
+      - type: bind
+        source: ./certs/postgres-ca.pem
+        target: /run/certs/postgres-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      simuladores:
+        condition: service_healthy
+
+  backend:
+    <<: *service
+    build:
+      context: ${BACKEND_CONTEXT:-../backend}
+    environment:
+      DB_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME}?sslmode=verify-full&sslrootcert=/run/certs/postgres-ca.pem
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      ETL_BASE_URL: http://127.0.0.1:8001
+      ETL_API_KEY: ${ETL_API_KEY}
+      SNMP_CREDENTIAL_KEY_FILE: /run/secrets/snmp_credentials.key
+      FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?Completa PUBLIC_ORIGIN en .env}
+      FRONTEND_ORIGINS: ${PUBLIC_ORIGIN}
+      SERVER_ADDRESS: 127.0.0.1
+      SERVER_PORT: "8080"
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes:
+      - type: bind
+        source: ./certs/postgres-ca.pem
+        target: /run/certs/postgres-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      fastapi:
+        condition: service_healthy
+
+  frontend:
+    <<: *service
+    build:
+      context: ${FRONTEND_CONTEXT:-../frontend}
+    environment:
+      BACKEND_UPSTREAM: 127.0.0.1:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  etl:
+    <<: *service
+    build:
+      context: ${ETL_CONTEXT:-../etl}
+      target: periodico
+    environment: *python-env
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes:
+      - type: bind
+        source: ./certs/postgres-ca.pem
+        target: /run/certs/postgres-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      simuladores:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    stop_grace_period: 30s
+
+secrets:
+  snmp_credentials_key:
+    file: ./secrets/snmp_credentials.key
+    # El origen es un archivo del host: sus permisos efectivos se preparan en Linux.
+    # Java y Python lo reciben en la misma ruta.
+    name: snmp_credentials.key

@@ -1,6 +1,11 @@
 # Variables de entorno reales (credenciales de base de datos, clave de cifrado, API key).
 # Copiar .env.example a .env y completar ahi, nunca versionar .env.
 .env
+.env.*
+!.env.example
+!**/.env.example
+despliegue/secrets/
+despliegue/certs/
 
 # Bytecode compilado de Python.
 __pycache__/
@@ -12,3 +17,6 @@ __pycache__/
 # Secretos de cifrado externos
 snmp_credentials.key
 snmp_credentials.backup.enc
+
+# Documentación privada de secretos
+CLAVES-DESPLIEGUE-PRIVADO.md

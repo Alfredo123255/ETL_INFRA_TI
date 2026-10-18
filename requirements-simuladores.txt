@@ -1,0 +1,4 @@
+-c requirements-constraints.txt
+pysnmp==6.2.6
+snmpsim==1.1.7
+cryptography==50.0.2

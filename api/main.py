@@ -33,6 +33,10 @@ def crear_app(config=None):
                   openapi_url="/openapi.json" if config.api_docs else None)
     app.state.config = config
 
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz():
+        return {"status": "ok"}
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
         fields = set(CrearActivoRequest.model_fields) | set(ProbarConexionRequest.model_fields)

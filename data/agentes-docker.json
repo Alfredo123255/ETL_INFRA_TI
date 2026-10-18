@@ -1,0 +1,155 @@
+[
+  {
+    "nombre": "hpe-dl380-01",
+    "host": "127.0.0.11",
+    "puerto": 16100,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001444c333830"
+  },
+  {
+    "nombre": "hpe-dl360-01",
+    "host": "127.0.0.12",
+    "puerto": 16200,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001444c333630"
+  },
+  {
+    "nombre": "hpe-c7000-01",
+    "host": "127.0.0.15",
+    "puerto": 16300,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "80000000014337303030"
+  },
+  {
+    "nombre": "hpe-bl460c-01",
+    "host": "127.0.0.13",
+    "puerto": 16400,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001424c433031"
+  },
+  {
+    "nombre": "hpe-bl460c-02",
+    "host": "127.0.0.14",
+    "puerto": 16500,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001424c433032"
+  },
+  {
+    "nombre": "hpe-bl460c-03",
+    "host": "127.0.0.16",
+    "puerto": 16900,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001424c433033"
+  },
+  {
+    "nombre": "aruba-cx-sw01",
+    "host": "127.0.0.20",
+    "puerto": 16600,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "800000000153573031"
+  },
+  {
+    "nombre": "hpe-storage-fc-01",
+    "host": "127.0.0.30",
+    "puerto": 16700,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "800000000153543031"
+  },
+  {
+    "nombre": "hpe-storage-fc-02",
+    "host": "127.0.0.31",
+    "puerto": 16800,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "800000000153543032"
+  },
+  {
+    "nombre": "huawei-2288h-v5-01",
+    "host": "127.0.0.40",
+    "puerto": 17000,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "8000000001485732323838"
+  },
+  {
+    "nombre": "huawei-ch121-v5-01",
+    "host": "127.0.0.41",
+    "puerto": 17100,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "800000000148574348313231"
+  },
+  {
+    "nombre": "huawei-e9000-01",
+    "host": "127.0.0.42",
+    "puerto": 17200,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "800000000148574539303030"
+  },
+  {
+    "nombre": "huawei-dorado-01",
+    "host": "127.0.0.43",
+    "puerto": 17300,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "80000000014857444f5241444f"
+  },
+  {
+    "nombre": "huawei-2288h-v5-02",
+    "host": "127.0.0.44",
+    "puerto": 17400,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "80000000014857323238383032"
+  },
+  {
+    "nombre": "huawei-ch121-v5-02",
+    "host": "127.0.0.45",
+    "puerto": 17500,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "8000000001485743483132313032"
+  },
+  {
+    "nombre": "huawei-e9000-02",
+    "host": "127.0.0.46",
+    "puerto": 17600,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "8000000001485745393030303032"
+  },
+  {
+    "nombre": "huawei-dorado-02",
+    "host": "127.0.0.47",
+    "puerto": 17700,
+    "usuario": "Administrator",
+    "auth_key": "Admin@9000",
+    "priv_key": "Admin@9000",
+    "engine_id": "80000000014857444f5241444f3032"
+  }
+]

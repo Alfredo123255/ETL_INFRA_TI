@@ -6,7 +6,7 @@ Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNM
 
 | Equipo | Tipo | IP y puerto UDP | Usuario SNMPv3 | Clave de autenticación | Clave de privacidad |
 | --- | --- | --- | --- | --- | --- |
-| `hpe-dl380-01` | Servidor rack | `127.0.0.11:16100` | `HPE` | `Admin@9000` | `Enterprise` |
+| `hpe-dl380-01` | Servidor rack | `127.0.0.11:16100` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-dl360-01` | Servidor rack | `127.0.0.12:16200` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-bl460c-01` | Servidor blade | `127.0.0.13:16400` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-bl460c-02` | Servidor blade | `127.0.0.14:16500` | `HPE` | `Enterprise` | `Enterprise` |
@@ -30,4 +30,30 @@ Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNM
 2. En «Registrar por SNMP», escribe la **IP con puerto**, el **usuario** y la **clave de autenticación** de su fila. Repite esa clave en «Confirmar clave».
 3. Pulsa «Probar conexión». Después selecciona un clúster y registra el activo.
 
-La clave del `hpe-dl380-01` en esta tabla es `Admin@9000`, que apareció en la configuración de arranque posterior al cambio de contraseña de las pruebas. Si el proceso del agente estaba encendido antes de ese cambio, reinícialo para que use esa clave.
+El DL380 usa HPE / Enterprise tanto para autenticación como para privacidad, igual que los demás agentes HPE.
+
+## Llave de cifrado y despliegue
+
+La llave actual que permite descifrar las credenciales de la base está guardada
+en `C:/Users/jenny/.config/infra-ti/snmp_credentials.key`.
+Su valor exacto y los pasos para trasladarla quedaron en la guía privada
+`C:/Users/jenny/.config/infra-ti/CLAVES-DESPLIEGUE-PRIVADO.md`, fuera del repositorio.
+Esta guía privada también permite reconstruir el archivo de llave si se conserva
+una copia de la guía y se pierde el archivo original.
+
+Al desplegar una copia de la base actual:
+
+1. Respaldar de forma privada y trasladar el mismo archivo `snmp_credentials.key`.
+2. Configurar `SNMP_CREDENTIAL_KEY_FILE` en backend, FastAPI y ETL periódico con
+   la ruta al archivo trasladado. Los tres deben leer el mismo contenido.
+3. Si se usa Docker, montar el archivo como secreto de solo lectura, por ejemplo
+   en `/run/secrets/snmp_credentials.key`, y usar esa ruta en la variable.
+4. Comprobar en el ETL `python -m etl.migrar_credenciales --verificar` antes de
+   iniciar el programador; la base ya convertida debe indicar cero pendientes.
+
+No generar una llave nueva al trasladar la BD cifrada: se necesita exactamente
+la llave con la que se guardaron sus credenciales. El archivo .env solo contiene
+la ruta; copiar .env no traslada automáticamente el archivo de llave. La guía
+privada y la llave no se incluyen en Git ni en las imágenes Docker.
+
+Más detalles: `CIFRADO_SNMP.md` del backend y la sección de cifrado del README del ETL.

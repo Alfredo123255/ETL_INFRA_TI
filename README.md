@@ -609,3 +609,8 @@ de componentes, mantenimiento, baja y asignación de clúster. No se implementa 
 auditoría general de firmware, sistema operativo o datos administrativos (E6).
 La selección de alertas permanece según la decisión del autor; las fechas de
 historial y alertas se presentan explícitamente en la zona America/Lima.
+
+
+## Despliegue Linux con Docker y PostgreSQL en AWS
+
+La configuración de los cinco servicios, el uso de la llave original, TLS hacia AWS y las verificaciones previas están en [despliegue/README.md](despliegue/README.md). Se mantienen 5173, 8080, 8001 y las direcciones de los 17 simuladores. No se crea una base local ni se modifica el esquema automáticamente.
