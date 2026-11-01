@@ -27,8 +27,8 @@ def test_conversion_atomica_idempotente_y_verificacion_sin_cambiar_datos(monkeyp
     try:
         with psycopg2.connect(url) as db, db.cursor() as cur:
             for i,clave in enumerate(('Enterprise','enc:v1:invalido')):
-                cur.execute("""INSERT INTO monitoreo_snmp(ip_gestion,usuario,clave,clave_privacidad,
-                    frecuencia_actualizacion,estado_conexion) VALUES (%s,'test',%s,'Enterprise',86400,'Inactivo') RETURNING id""",
+                cur.execute("""INSERT INTO monitoreo_snmp(ip_gestion,usuario,clave,
+                    frecuencia_actualizacion,estado_conexion) VALUES (%s,'test',%s,86400,'Inactivo') RETURNING id""",
                     (marca+str(i),clave))
                 ids.append(cur.fetchone()[0])
         # El adaptador limita únicamente el SELECT a las filas de esta fixture.
@@ -39,8 +39,8 @@ def test_conversion_atomica_idempotente_y_verificacion_sin_cambiar_datos(monkeyp
             def __enter__(self): self.cursor.__enter__(); return self
             def __exit__(self, *args): return self.cursor.__exit__(*args)
             def execute(self, sql, params=None):
-                if sql == 'SELECT id,clave,clave_privacidad FROM monitoreo_snmp ORDER BY id FOR UPDATE':
-                    return self.cursor.execute('SELECT id,clave,clave_privacidad FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id FOR UPDATE',(ids,))
+                if sql == 'SELECT id,clave FROM monitoreo_snmp ORDER BY id FOR UPDATE':
+                    return self.cursor.execute('SELECT id,clave FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id FOR UPDATE',(ids,))
                 return self.cursor.execute(sql,params)
             def fetchall(self): return self.cursor.fetchall()
         class ConexionFixture:
@@ -56,18 +56,17 @@ def test_conversion_atomica_idempotente_y_verificacion_sin_cambiar_datos(monkeyp
             assert cur.fetchone()[0] == 'Enterprise'  # La primera actualización también se revirtió.
             cur.execute('UPDATE monitoreo_snmp SET clave=%s WHERE id=%s',
                         (cifrar('Admin@9000',llave),ids[1]))
-        assert convertir(config) == {'conexiones_revisadas':2,'convertidas':2}
+        assert convertir(config) == {'conexiones_revisadas':2,'convertidas':1}
         with psycopg2.connect(url) as db, db.cursor() as cur:
-            cur.execute('SELECT clave,clave_privacidad,estado_conexion,frecuencia_actualizacion FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id',(ids,))
+            cur.execute('SELECT clave,estado_conexion,frecuencia_actualizacion FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id',(ids,))
             antes = cur.fetchall()
         assert descifrar(antes[0][0],llave) == 'Enterprise'
         assert descifrar(antes[1][0],llave) == 'Admin@9000'
-        assert all(descifrar(f[1],llave,'clave_privacidad')=='Enterprise' for f in antes)
-        assert all(f[2:]==('Inactivo',86400) for f in antes)
+        assert all(f[1:]==('Inactivo',86400) for f in antes)
         assert convertir(config) == {'conexiones_revisadas':2,'convertidas':0}
         assert convertir(config,verificar=True) == {'conexiones_revisadas':2,'pendientes':0}
         with psycopg2.connect(url) as db, db.cursor() as cur:
-            cur.execute('SELECT clave,clave_privacidad,estado_conexion,frecuencia_actualizacion FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id',(ids,))
+            cur.execute('SELECT clave,estado_conexion,frecuencia_actualizacion FROM monitoreo_snmp WHERE id=ANY(%s) ORDER BY id',(ids,))
             assert cur.fetchall() == antes
     finally:
         if ids:

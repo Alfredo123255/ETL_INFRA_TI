@@ -19,7 +19,7 @@ def motor(monkeypatch):
     return engine
 
 async def consultar():
-    return await snmp.probar_conexion("127.0.0.1",161,"monitor",SecretStr("auth-secreta"),None,CFG)
+    return await snmp.probar_conexion("127.0.0.1",161,"monitor",SecretStr("auth-secreta"),CFG)
 
 async def test_deteccion_no_invalida_conexion(monkeypatch,motor):
     monkeypatch.setattr(snmp,"getCmd",AsyncMock(return_value=(None,0,0,BINDINGS)))

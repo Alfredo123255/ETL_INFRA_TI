@@ -50,26 +50,23 @@ class ConexionMonitoreo:
     ip_gestion: str
     usuario: str = field(repr=False)
     clave: SecretStr = field(repr=False)
-    clave_privacidad: SecretStr | None = field(repr=False)
 
 
 def leer_conexion(config, conexion_id):
     """Lee credenciales actuales en cada iteración; no las expone en logs/resultados."""
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("""SELECT m.activo_id, m.ip_gestion, m.usuario, m.clave, m.clave_privacidad
+        cur.execute("""SELECT m.activo_id, m.ip_gestion, m.usuario, m.clave
             FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
             WHERE m.id=%s AND a.estado_operativo <> 'Baja'
             AND m.estado_conexion IN ('Activo', 'Sin conexión')""", (conexion_id,))
         row = cur.fetchone()
     if not row:
         return None
-    activo_id, ip, usuario, clave, privacidad = row
+    activo_id, ip, usuario, clave = row
     clave = descifrar(clave, config.credential_key)
-    privacidad = descifrar(privacidad, config.credential_key, "clave_privacidad")
     if not ip or not usuario or not clave:
         raise DatosIncompletos("La conexión vinculada no tiene datos SNMP completos.")
-    return ConexionMonitoreo(conexion_id, activo_id, ip, usuario, SecretStr(clave),
-                            SecretStr(privacidad) if privacidad else None)
+    return ConexionMonitoreo(conexion_id, activo_id, ip, usuario, SecretStr(clave))
 
 
 def _filas(cur, tabla, relacion, padre_id):
@@ -290,12 +287,11 @@ def _sincronizar_slots(cur, chasis_id):
 
 
 def _bloquear_conexion(cur, referencia, config):
-    cur.execute("""SELECT activo_id, ip_gestion, usuario, clave, clave_privacidad, estado_conexion
+    cur.execute("""SELECT activo_id, ip_gestion, usuario, clave, estado_conexion
         FROM monitoreo_snmp WHERE id=%s FOR UPDATE""", (referencia.id,))
     row = cur.fetchone()
     if not row or row["activo_id"] != referencia.activo_id or row["ip_gestion"] != referencia.ip_gestion or \
-       row["usuario"] != referencia.usuario or descifrar(row["clave"], config.credential_key) != referencia.clave.get_secret_value() or \
-       descifrar(row["clave_privacidad"], config.credential_key, "clave_privacidad") != (referencia.clave_privacidad.get_secret_value() if referencia.clave_privacidad else None):
+       row["usuario"] != referencia.usuario or descifrar(row["clave"], config.credential_key) != referencia.clave.get_secret_value():
         raise DatosIncompletos("La conexión cambió durante la consulta; se repetirá en el siguiente ciclo.")
     return row
 
@@ -346,7 +342,7 @@ def guardar_iteracion(config, referencia, ficha):
         # Los campos administrativos, ubicación y clúster pertenecen al front.
         campos_activo = {k: v for k, v in activo.items() if k in COLUMNAS["activo"] and
                          k not in ("numero_serie", "ubicacion", "cluster", "ip_gestion") and v is not None}
-        # La lectura exitosa comparte la misma marca UTC con métricas y conexión.
+        # La lectura exitosa comparte la misma marca UTC con las métricas.
         campos_activo["ultima_actualizacion"] = fecha
         cambios = bool(_actualizar_fila(cur, "activo", referencia.activo_id, anterior,
                                        campos_activo, forzar=("ultima_actualizacion",)))
@@ -389,8 +385,7 @@ def guardar_iteracion(config, referencia, ficha):
         if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes and "chasis_slot" not in tablas_omitidas:
             _sincronizar_slots(cur, referencia.activo_id)
         guardar_metricas(db, referencia.activo_id, metricas)
-        cur.execute("""UPDATE monitoreo_snmp SET estado_conexion='Activo',
-            fecha_ultima_actualizacion=%s WHERE id=%s""", (fecha, referencia.id))
+        cur.execute("""UPDATE monitoreo_snmp SET estado_conexion='Activo' WHERE id=%s""", (referencia.id,))
         if conexion["estado_conexion"] != "Activo":
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Activo", "Conexión SNMP restablecida", fecha)
@@ -411,7 +406,7 @@ async def ejecutar_iteracion(config, conexion_id):
     try:
         host, puerto = separar_destino(referencia.ip_gestion)
         host = await resolver_destino(host, puerto, config.redes_permitidas, config.snmp_timeout)
-        snmp = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave, referencia.clave_privacidad,
+        snmp = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave,
                             config.snmp_context_name, config.snmp_timeout, config.snmp_retries)
         ficha = await preparar_registro_activo(snmp, config, ip_gestion=referencia.ip_gestion)
     except ErrorExtraccion as exc:

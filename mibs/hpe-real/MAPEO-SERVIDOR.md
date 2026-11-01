@@ -299,3 +299,13 @@ IP-MIB, sección 3) — con la salvedad de que, al no exponer este agente su pro
 - `cpuTotalGhz` lo calcula el backend a partir de velocidad × núcleos de las CPUs.
   `cpu_uso_ghz` y `ram_uso_gb` son mediciones históricas, no columnas de la tabla
   `servidor`.
+
+## Extensión de métricas de volúmenes y blades del laboratorio
+
+Se incorpora CPQHOST-MIB: `cpqHoFileSysSpaceTotal` (`1.3.6.1.4.1.232.11.2.4.1.1.3`)
+y `cpqHoFileSysSpaceUsed` (`...1.1.4`), ambos en MB y por índice de volumen.
+El ETL suma el espacio ocupado como `disco_uso_gb`.
+Los tres blades exponen ahora IF-MIB propio con Counter64 para medir su tráfico;
+las fuentes y ventiladores continúan a nivel del chasis. Esta extensión sustituye
+el alcance anterior que excluía IF-MIB propio del blade. No se duplican puertos
+del chasis ni se crean NIC físicas nuevas en la ficha del blade.

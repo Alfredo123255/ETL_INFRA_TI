@@ -9,13 +9,15 @@ from etl.extraccion.servidor import extraer_servidor
 from etl.normalizacion.servidor import normalizar_servidor
 from etl.oids.servidor import OIDS_IDENTIDAD
 from etl.snmp_cliente import probar_conexion, ErrorExtraccion
+from etl.metricas_red import agregar_metricas_red
+from etl.metricas_storage import agregar_metricas_storage
 
 
 async def preparar_registro_servidor(conexion, config, *, tipo="AUTO", ip_gestion=None, prueba=None):
     """Prueba y detecta el equipo antes de seleccionar su perfil de extracción."""
     if prueba is None:
         prueba = await probar_conexion(conexion.host, conexion.puerto, conexion.usuario,
-            conexion.clave, conexion.clave_privacidad, config)
+            conexion.clave, config)
     if not prueba["ok"]:
         raise ErrorExtraccion(prueba["error_tipo"])
     if prueba["tipo_detectado"] != "SERVIDOR" or prueba["fabricante"] not in ("HPE", "Huawei"):
@@ -29,13 +31,15 @@ async def preparar_registro_servidor(conexion, config, *, tipo="AUTO", ip_gestio
     ficha["activo"]["ip_gestion"] = ip_gestion or (
         f"[{conexion.host}]:{conexion.puerto}" if ":" in conexion.host
         else f"{conexion.host}:{conexion.puerto}")
+    await agregar_metricas_red(ficha, datos, conexion)
+    await agregar_metricas_storage(ficha, datos, conexion)
     return ficha
 
 
 async def preparar_registro_activo(conexion, config, *, ip_gestion=None):
     """Detecta el tipo por SNMP y prepara una ficha compatible con su subtipo SQL."""
     prueba = await probar_conexion(conexion.host, conexion.puerto, conexion.usuario,
-        conexion.clave, conexion.clave_privacidad, config)
+        conexion.clave, config)
     if not prueba["ok"]:
         raise ErrorExtraccion(prueba["error_tipo"])
     tipo = prueba["tipo_detectado"]
@@ -64,4 +68,6 @@ async def preparar_registro_activo(conexion, config, *, ip_gestion=None):
     ficha["activo"]["ip_gestion"]=ip_gestion or (
         f"[{conexion.host}]:{conexion.puerto}" if ":" in conexion.host
         else f"{conexion.host}:{conexion.puerto}")
+    await agregar_metricas_red(ficha, datos, conexion)
+    await agregar_metricas_storage(ficha, datos, conexion)
     return ficha

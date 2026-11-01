@@ -83,4 +83,7 @@ timeout /t 2 /nobreak >nul
 echo Iniciando huawei-dorado-02 en 127.0.0.47:17700 ...
 start "huawei-dorado-02 (127.0.0.47:17700)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000014857444f5241444f3032 --v3-user=Administrator --v3-auth-key=Admin@9000 --v3-auth-proto=SHA --v3-priv-key=Admin@9000 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.47:17700 --data-dir="%REPO_ROOT%\data\huawei-dorado-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-dorado-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
 
+echo Iniciando hpe-dl380-02 en 127.0.0.17:17800 ...
+start "hpe-dl380-02 (127.0.0.17:17800)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001444c3338303032 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.17:17800 --data-dir="%REPO_ROOT%\data\hpe-dl380-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-dl380-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+
 endlocal

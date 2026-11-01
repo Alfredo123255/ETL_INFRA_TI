@@ -28,12 +28,12 @@ async def test_extraccion_servidor_local(agente, tmp_path):
         puerto = reservado.getsockname()[1]
     host = "127.0.0.1"
     conexion = ConexionSNMP(host, puerto, config["usuario"], SecretStr(config["clave"]),
-                            SecretStr(config["clave_privacidad"]), contexto="public", timeout=.5, reintentos=0)
+                            contexto="public", timeout=.5, reintentos=0)
     raiz = Path(__file__).resolve().parents[2]
     comando = [sys.executable, str(raiz / "data" / "run_responder.py"),
         "--v3-engine-id=8000000001abcdef12", "--v3-user=" + config["usuario"],
         "--v3-auth-key=" + config["clave"], "--v3-auth-proto=SHA",
-        "--v3-priv-key=" + config["clave_privacidad"], "--v3-priv-proto=AES",
+        "--v3-priv-key=" + config["clave"], "--v3-priv-proto=AES",
         f"--agent-udpv4-endpoint={host}:{puerto}", "--data-dir=" + str(raiz / "data" / agente),
         "--cache-dir=" + str(tmp_path)]
     cfg = Configuracion(SecretStr("test"), snmp_context_name="public", snmp_timeout=.5, snmp_retries=0)
@@ -43,7 +43,7 @@ async def test_extraccion_servidor_local(agente, tmp_path):
         plazo = monotonic() + 15
         while True:
             assert proceso.poll() is None, "El simulador terminó antes de estar disponible."
-            prueba = await probar_conexion(host, puerto, conexion.usuario, conexion.clave, conexion.clave_privacidad, cfg)
+            prueba = await probar_conexion(host, puerto, conexion.usuario, conexion.clave, cfg)
             if prueba["ok"]:
                 break
             assert prueba["error_tipo"] == "timeout", prueba

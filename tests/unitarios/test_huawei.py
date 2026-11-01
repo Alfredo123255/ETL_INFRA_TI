@@ -71,7 +71,7 @@ def test_rack_y_blade_se_distinguen_por_evidencia_ibmc():
         "numero_serial": None, "modelo": "Huawei RAID Controller CH121 V5",
         "raid": "RAID1", "estado": "Encendido"}]
     assert {m["nombre_metrica"] for m in rack["mediciones"]} == {
-        "temperatura", "consumo_electrico_w", "cpu_uso_ghz", "ram_uso_gb"}
+        "temperatura", "consumo_electrico_w", "cpu_uso_ghz", "ram_uso_gb", "disco_uso_gb"}
     datos = captura("huawei-ch121-v5-01")
     del datos[IBMC + ".44.7.0"]
     with pytest.raises(DatosIncompletos):
@@ -149,7 +149,8 @@ def test_oceanstor_capacidad_componentes_y_metricas():
         for indice in (1, 2)
     ]
     assert {m["nombre_metrica"] for m in ficha["mediciones"]} == {
-        "temperatura", "consumo_electrico_w", "iops", "latencia_ms"}
+        "temperatura", "consumo_electrico_w", "iops", "latencia_ms",
+        "almacenamiento_throughput_lectura_mbps", "almacenamiento_throughput_escritura_mbps"}
 
 
 def test_oceanstor_no_inventa_watts_ni_rpm_sin_sensores():

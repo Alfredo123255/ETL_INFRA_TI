@@ -42,13 +42,13 @@ def fallo(tipo, milliseconds):
 def valor_ausente(value):
     return isinstance(value, (rfc1905.NoSuchObject, rfc1905.NoSuchInstance, rfc1905.EndOfMibView))
 
-async def probar_conexion(host, puerto, usuario, clave, clave_privacidad, config):
+async def probar_conexion(host, puerto, usuario, clave, config):
     start = perf_counter()
     elapsed = lambda: round((perf_counter() - start) * 1000)
     engine = SnmpEngine()
     try:
         auth = UsmUserData(usuario, authKey=clave.get_secret_value(),
-                           privKey=(clave_privacidad if clave_privacidad is not None else clave).get_secret_value(),
+                           privKey=clave.get_secret_value(),
                            authProtocol=usmHMACSHAAuthProtocol, privProtocol=usmAesCfb128Protocol)
         transport_class = Udp6TransportTarget if ":" in host else UdpTransportTarget
         target = transport_class((host, puerto), timeout=config.snmp_timeout, retries=config.snmp_retries)
@@ -90,7 +90,6 @@ class ConexionSNMP:
     puerto: int
     usuario: str = field(repr=False)
     clave: SecretStr = field(repr=False)
-    clave_privacidad: SecretStr | None = field(default=None, repr=False)
     contexto: str = ""
     timeout: float = 3
     reintentos: int = 1
@@ -107,7 +106,7 @@ class SesionSNMP:
         try:
             c = self.conexion
             self.auth = UsmUserData(c.usuario, authKey=c.clave.get_secret_value(),
-                privKey=(c.clave_privacidad or c.clave).get_secret_value(),
+                privKey=c.clave.get_secret_value(),
                 authProtocol=usmHMACSHAAuthProtocol, privProtocol=usmAesCfb128Protocol)
             transport = Udp6TransportTarget if ":" in c.host else UdpTransportTarget
             self.destino = transport((c.host, c.puerto), timeout=c.timeout, retries=c.reintentos)

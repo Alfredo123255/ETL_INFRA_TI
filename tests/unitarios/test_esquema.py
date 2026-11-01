@@ -12,20 +12,19 @@ def conexion(filas):
     return db
 
 
-FILAS = [("monitoreo_snmp", "clave_privacidad", "character varying"),
-         ("activo", "ultima_actualizacion", "timestamp without time zone")]
+FILAS = [("activo", "ultima_actualizacion", "timestamp without time zone")]
 
 
 def test_verifica_instalacion_sin_ejecutar_migraciones():
     db = conexion(FILAS)
-    assert verificar_columnas(db) == {"compatible": True, "columnas_verificadas": 2}
+    assert verificar_columnas(db) == {"compatible": True, "columnas_verificadas": 1}
     sentencias = db.cursor.return_value.__enter__.return_value.execute.call_args_list
     assert len(sentencias) == 1 and sentencias[0].args[0].lstrip().startswith("SELECT")
 
 
 @pytest.mark.parametrize("filas,detalle", [
-    (FILAS[1:], "clave_privacidad"),
-    (FILAS[:1] + [("activo", "ultima_actualizacion", "date")], "ultima_actualizacion"),
+    ([], "ultima_actualizacion"),
+    ([("activo", "ultima_actualizacion", "date")], "ultima_actualizacion"),
 ])
 def test_informa_campo_ausente_o_fecha_sin_hora(filas, detalle):
     with pytest.raises(BaseNoDisponible, match=detalle):

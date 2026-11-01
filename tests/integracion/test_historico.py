@@ -44,9 +44,9 @@ def base():
                     (CLUSTER, DATACENTER))
         for nombre_agente in ORDEN:
             a = leer_agente(nombre_agente)
-            cur.execute("""INSERT INTO monitoreo_snmp (ip_gestion, usuario, clave, clave_privacidad,
-                frecuencia_actualizacion, estado_conexion) VALUES (%s,%s,%s,%s,60,'Inactivo') RETURNING id""",
-                (a["ip_gestion"], a["usuario"], a["clave"], a["clave_privacidad"]))
+            cur.execute("""INSERT INTO monitoreo_snmp (ip_gestion, usuario, clave,
+                frecuencia_actualizacion, estado_conexion) VALUES (%s,%s,%s,60,'Inactivo') RETURNING id""",
+                (a["ip_gestion"], a["usuario"], a["clave"]))
             conexiones[nombre_agente] = cur.fetchone()[0]
     return conexiones
 
@@ -149,8 +149,6 @@ def test_iteracion_periodica_guarda_metricas_y_conserva_eventos(altas, base, cli
         cur.execute("SELECT ultima_actualizacion, xmin::text FROM activo WHERE id=%s", (activo_id,))
         fecha_activo, version_despues = cur.fetchone()
         assert fecha_activo is not None
-        cur.execute("SELECT fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (base[nombre],))
-        assert fecha_activo == cur.fetchone()[0]
         assert version_despues != version_antes
 
 
@@ -177,8 +175,6 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         destino = cur.fetchone()[0]
         cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
         fecha_activo = cur.fetchone()[0]
-        cur.execute("SELECT fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
-        fecha_conexion = cur.fetchone()[0]
         cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
         metricas_antes = cur.fetchone()[0]
         cur.execute("UPDATE monitoreo_snmp SET ip_gestion='127.0.0.1:1' WHERE id=%s", (conexion_id,))
@@ -186,8 +182,8 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         fallo = asyncio.run(ejecutar_iteracion(config, conexion_id))
         assert fallo["ok"] is False and fallo["eventos"] == 2
         with _conectar() as c, c.cursor() as cur:
-            cur.execute("SELECT estado_conexion, fecha_ultima_actualizacion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
-            assert cur.fetchone() == ("Sin conexión", fecha_conexion)
+            cur.execute("SELECT estado_conexion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
+            assert cur.fetchone() == ("Sin conexión",)
             cur.execute("SELECT estado_operativo, ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
             assert cur.fetchone() == ("Degradado", fecha_activo)
             cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
@@ -219,7 +215,7 @@ def test_componentes_nuevos_y_ausentes_y_campos_del_front(altas, base, cliente):
     referencia = leer_conexion(config, base["aruba-cx-sw01"])
     host, puerto = separar_destino(referencia.ip_gestion)
     conexion = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave,
-                           referencia.clave_privacidad, config.snmp_context_name)
+                           config.snmp_context_name)
     ficha = asyncio.run(preparar_registro_activo(conexion, config, ip_gestion=referencia.ip_gestion))
     with _conectar() as c, c.cursor() as cur:
         cur.execute("UPDATE switch SET modo_operacion='L3' WHERE id=%s", (activo_id,))
@@ -255,7 +251,7 @@ def test_slot_y_blade_conservan_su_vinculo(altas, base, cliente):
     referencia = leer_conexion(config, base["hpe-c7000-01"])
     host, puerto = separar_destino(referencia.ip_gestion)
     conexion = ConexionSNMP(host, puerto, referencia.usuario, referencia.clave,
-                           referencia.clave_privacidad, config.snmp_context_name)
+                           config.snmp_context_name)
     ficha = asyncio.run(preparar_registro_activo(conexion, config, ip_gestion=referencia.ip_gestion))
     slot = next(s for s in ficha["componentes"]["chasis_slot"] if s["numero_slot"] == 1)
     original = slot.copy()

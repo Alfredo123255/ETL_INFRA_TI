@@ -6,6 +6,10 @@ se asignan números arbitrarios a atributos del fabricante.
 from pathlib import Path
 import re
 import zipfile
+try:
+    from data.completar_metricas_agentes import completar
+except ModuleNotFoundError:
+    from completar_metricas_agentes import completar
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -383,6 +387,7 @@ def dorado(data, svc, hw, space, perf, *, instancia=1):
 
 
 def save(name, data):
+    completar(name, data)
     folder = DATA / name
     folder.mkdir(parents=True, exist_ok=True)
     lines = [f"{oid}|{tag}|{value}" for oid, (tag, value) in sorted(

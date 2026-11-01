@@ -13,15 +13,10 @@ que ahora reporta `hpe-bl460c-01`). El número de serie (`numero_serie` /
 reporta para ese slot (`cpqRackServerBladeSerialNum.1.1.1`), para que ambos agentes describan
 el mismo blade de forma consistente.
 
-**Alcance deliberadamente distinto al de un servidor rack:** este agente sólo expone lo que la
-ficha de un servidor *blade* necesita (datos generales, CPU, RAM, discos + controladora RAID,
-temperatura, consumo e IP del sistema operativo). **No** expone tabla de tarjetas de red
-(`cpqNicIfPhysAdapterTable`), ventiladores (`cpqHeFltTolFanTable`) ni fuentes de poder
-(`cpqHeFltTolPowerSupplyTable`), ni IF-MIB propio: un blade no tiene NIC, ventiladores ni fuentes
-de poder individuales — todo eso es compartido a nivel de chasis y ya lo reporta
-[`hpe-c7000-01`](../hpe-c7000-01/) (`cpqRackNetConnectorTable`, `cpqRackCommonEnclosureFanTable`,
-`cpqRackPowerSupplyTable`, y el IF-MIB del módulo de interconexión). Ver
-[`MAPEO-SERVIDOR.md`](../../mibs/hpe-real/MAPEO-SERVIDOR.md) sección "Servidores tipo BLADE".
+**Métricas del blade:** incluye IF-MIB propio con contadores de 64 bits para
+medir tráfico y utilización de sus interfaces de red. Los ventiladores y fuentes
+siguen perteneciendo al chasis; no se duplican como componentes del blade.
+La ocupación de volúmenes se obtiene del bloque CPQHOST-MIB añadido al agente.
 
 ## Cómo levantarlo
 

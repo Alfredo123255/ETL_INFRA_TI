@@ -41,7 +41,6 @@ class ProbarConexionRequest(BaseModel):
     ip_gestion: str
     usuario: str
     clave: SecretStr
-    clave_privacidad: SecretStr | None = None
 
     @field_validator("ip_gestion")
     @classmethod
@@ -56,7 +55,7 @@ class ProbarConexionRequest(BaseModel):
             raise ValueError("Usuario inválido")
         return value
 
-    @field_validator("clave", "clave_privacidad")
+    @field_validator("clave")
     @classmethod
     def clave_valida(cls, value):
         if value is not None and not value.get_secret_value().strip():

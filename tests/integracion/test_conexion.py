@@ -30,7 +30,7 @@ def test_agente(name,kind):
 
 @pytest.mark.parametrize("case,expected", [
     ("puerto_sin_agente","timeout"),("usuario","usuario_desconocido"),
-    ("autenticacion","clave_autenticacion"),("privacidad","clave_privacidad")])
+    ("autenticacion","clave_autenticacion")])
 def test_errores(case,expected):
     body=leer_agente("hpe-dl380-01")
     with TestClient(crear_app(CFG)) as client:
@@ -48,8 +48,6 @@ def test_errores(case,expected):
                 body["usuario"]="usuario_inexistente_test"
             elif case=="autenticacion":
                 body["clave"]="auth-incorrecta-test"
-            else:
-                body["clave_privacidad"]="priv-incorrecta-test"
             response=client.post(PATH,json=body,headers=HEADERS)
         finally:
             if sock:
@@ -58,6 +56,6 @@ def test_errores(case,expected):
     result=response.json()
     assert result["ok"] is False
     assert result["error_tipo"]==expected,result
-    for field in ("usuario","clave","clave_privacidad"):
+    for field in ("usuario","clave"):
         assert body[field] not in response.text
     print(f"\n{case} | {result['error_tipo']} | {result['milisegundos']} ms")

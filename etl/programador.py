@@ -18,7 +18,7 @@ CANAL_ACTUALIZACION = "etl_actualizar_conexion"
 
 def conexiones_programadas(config, conexion_id=None):
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("""SELECT m.id, m.frecuencia_actualizacion, m.fecha_ultima_actualizacion
+        cur.execute("""SELECT m.id, m.frecuencia_actualizacion, a.ultima_actualizacion
             FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
             WHERE a.estado_operativo <> 'Baja'
               AND m.estado_conexion IN ('Activo', 'Sin conexión')

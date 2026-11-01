@@ -41,3 +41,14 @@ consumo individual de fuente; esos campos quedan nulos. OSCA-MIB da velocidad
 de ventilador en porcentaje, así que RPM también queda nulo. El MIB de Dorado
 sí aporta IOPS y latencia, que se guardan como métricas históricas.
 No se recibió un MIB de switch Huawei, por lo que ese perfil sigue sin soporte.
+
+## Métricas completadas en el laboratorio
+
+Los servidores rack y blade incorporan HOST-RESOURCES-MIB (`hrStorageType`,
+`hrStorageAllocationUnits`, `hrStorageSize`, `hrStorageUsed`) como extensión del
+agente simulado para el espacio ocupado de los volúmenes del SO. No se afirma
+que iBMC real exponga esos volúmenes. Los contadores IF-MIB de 64 bits ahora son
+acumulativos; OceanStor también expone interfaces FC para las tasas por puerto.
+ISM-PERFORMANCE-MIB aporta `hwPerfNodeReadTraffic` (`...34774.4.1.21.3.1.9`) y
+`hwPerfNodeWriteTraffic` (`...21.3.1.10`), en MB/s: suma por nodos y conversión a
+Mbps multiplicando por ocho. El generador Huawei conserva estas extensiones.

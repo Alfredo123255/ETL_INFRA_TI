@@ -1,5 +1,6 @@
 """Ficha de servidor según schema.sql; no calcula el total de GHz del backend."""
 import re
+from etl.normalizacion.volumenes import uso_disco
 from decimal import Decimal
 from etl.errores import DatosIncompletos
 from etl.oid_util import SYSTEM, filas as filas_oid
@@ -225,6 +226,7 @@ def normalizar_servidor_hpe(datos_crudos, *, fecha_actualizacion, tipo="RACKEABL
     for campo in ("temperatura", "consumo_electrico_w"):
         if activo[campo] is not None:
             mediciones.append({"nombre_metrica": campo, "valor": activo[campo]})
+    mediciones.extend(uso_disco(datos_crudos, "HPE"))
     return {"activo": activo, "servidor": servidor, "componentes": componentes,
             "mediciones": mediciones, "ubicacion_snmp": texto(identidad["ubicacion_snmp"])}
 
@@ -414,5 +416,5 @@ def normalizar_servidor_huawei(datos, *, fecha_actualizacion, tipo="AUTO"):
     return {"activo": activo, "servidor": {"tipo": "BLADE" if blade else "RACKEABLE",
             "version_so": None, "ip_sistema_operativo": None},
             "componentes": componentes, "discos_ausentes": discos_ausentes,
-            "mediciones": _mediciones(activo, extras),
+            "mediciones": _mediciones(activo, extras) + uso_disco(datos, "Huawei"),
             "ubicacion_snmp": _s(datos, SYSTEM["ubicacion"])}

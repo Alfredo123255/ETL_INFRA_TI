@@ -56,13 +56,13 @@ def test_lectura_monitoreo_descifra_para_snmp():
     from etl.monitoreo import leer_conexion
     config = Configuracion(SecretStr("test"), credential_key=LLAVE)
     cursor = MagicMock()
-    cursor.fetchone.return_value = (1, "127.0.0.1:161", "HPE", cifrar("Enterprise", LLAVE),
-                                    cifrar("Enterprise", LLAVE, "clave_privacidad"))
+    cursor.fetchone.return_value = (1, "127.0.0.1:161", "HPE", cifrar("Enterprise", LLAVE))
     db = MagicMock()
     db.cursor.return_value.__enter__.return_value = cursor
     with patch("etl.monitoreo.conexion_bd") as conexion:
         conexion.return_value.__enter__.return_value = db
         referencia = leer_conexion(config, 2)
     assert referencia.clave.get_secret_value() == "Enterprise"
-    assert referencia.clave_privacidad.get_secret_value() == "Enterprise"
+    assert not hasattr(referencia, "clave_privacidad")
+    assert "clave_privacidad" not in cursor.execute.call_args.args[0]
     assert "Enterprise" not in repr(referencia)

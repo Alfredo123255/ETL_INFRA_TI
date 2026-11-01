@@ -17,42 +17,42 @@ POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"Kr7aY5nT2LdUco2B5IAZ","clave_privacidad":"GpoJkRAhPOZg3vA4qHyT"}
+{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"Kr7aY5nT2LdUco2B5IAZ"}
 
 ### 2. SERVIDOR blade (hpe-bl460c-01)
 POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.13:16400","usuario":"monitor_bl460c01","clave":"Yb2QzP9mLxT4wVh8Kd3R","clave_privacidad":"Ft6NcE1oRgJ5sWp2Ux9M"}
+{"ip_gestion":"127.0.0.13:16400","usuario":"monitor_bl460c01","clave":"Yb2QzP9mLxT4wVh8Kd3R"}
 
 ### 3. CHASIS (hpe-c7000-01)
 POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.15:16300","usuario":"monitor_c7000","clave":"cy8EcO4BePPAN9Os5zts","clave_privacidad":"NR2yILtdOtWShA70stgf"}
+{"ip_gestion":"127.0.0.15:16300","usuario":"monitor_c7000","clave":"cy8EcO4BePPAN9Os5zts"}
 
 ### 4. STORAGE (hpe-storage-fc-01)
 POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.30:16700","usuario":"monitor_storagefc01","clave":"RcVQ87sKGKNAXteaPhvF","clave_privacidad":"87KIBACIxZCukpKjai0Z"}
+{"ip_gestion":"127.0.0.30:16700","usuario":"monitor_storagefc01","clave":"RcVQ87sKGKNAXteaPhvF"}
 
 ### 5. SWITCH (aruba-cx-sw01)
 POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.20:16600","usuario":"monitor_sw01","clave":"2JePukZ17WBQg10i3J3U","clave_privacidad":"ZynkEa6RTaPcFsqG1Oc5"}
+{"ip_gestion":"127.0.0.20:16600","usuario":"monitor_sw01","clave":"2JePukZ17WBQg10i3J3U"}
 
 ### 6. Clave de autenticación incorrecta -> ok false, error_tipo clave_autenticacion
 POST {{host}}/api/etl/probar-conexion
 Content-Type: application/json
 X-API-Key: {{key}}
 
-{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"incorrecta123","clave_privacidad":"GpoJkRAhPOZg3vA4qHyT"}
+{"ip_gestion":"127.0.0.11:16100","usuario":"monitor_dl380","clave":"incorrecta123"}
 
 ### 7. Destino sin agente -> ok false, error_tipo timeout
 POST {{host}}/api/etl/probar-conexion

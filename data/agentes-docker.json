@@ -151,5 +151,14 @@
     "auth_key": "Admin@9000",
     "priv_key": "Admin@9000",
     "engine_id": "80000000014857444f5241444f3032"
+  },
+  {
+    "nombre": "hpe-dl380-02",
+    "host": "127.0.0.17",
+    "puerto": 17800,
+    "usuario": "HPE",
+    "auth_key": "Enterprise",
+    "priv_key": "Enterprise",
+    "engine_id": "8000000001444c3338303032"
   }
 ]

@@ -55,7 +55,7 @@ def test_registro_guarda_relaciones_modelo_y_metricas(ficha, conexion):
     assert resultado["ubicacion"] == "DataCenter-1"
     assert resultado["componentes"]["cpu"] == 2
     assert resultado["componentes"]["puerto_tarjeta_red"] == 2
-    assert resultado["metricas_guardadas"] == 4
+    assert resultado["metricas_guardadas"] == 5
     llamadas = [(c.args[0], c.args[1]) for c in cursor.execute.call_args_list]
     assert llamadas[0][1] == ("DataCenter-1",)
     assert "ON CONFLICT (nombre_modelo) DO NOTHING" in llamadas[1][0]
@@ -313,9 +313,9 @@ def test_cambio_concurrente_impide_registro(monkeypatch):
 
 @pytest.mark.parametrize('rows,error', [
     ([None], 'ReferenciaNoEncontrada'),
-    ([('127.0.0.1','user','secret',10,None)], 'ActivoDuplicado'),
-    ([('127.0.0.1','user','secret',None,None),None], 'ReferenciaNoEncontrada'),
-    ([('127.0.0.1','user','secret',None,None),(None,)], 'DatosIncompletos')])
+    ([('127.0.0.1','user','secret',10)], 'ActivoDuplicado'),
+    ([('127.0.0.1','user','secret',None),None], 'ReferenciaNoEncontrada'),
+    ([('127.0.0.1','user','secret',None),(None,)], 'DatosIncompletos')])
 def test_referencias_incompletas(rows, error):
     import etl.errores as errores
     from etl.registro_conexion import leer_referencias

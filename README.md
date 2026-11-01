@@ -1,6 +1,6 @@
 # ETL de infraestructura TI — entorno SNMP simulado
 
-Este repositorio incluye diecisiete agentes SNMPv3 simulados: nueve HPE/Aruba y ocho Huawei.
+Este repositorio incluye dieciocho agentes SNMPv3 simulados: diez HPE/Aruba y ocho Huawei.
 El ETL crea activos HPE/Aruba y Huawei en PostgreSQL; los perfiles Huawei cubren
 servidor rack, blade, chasis E9000 y storage OceanStor Dorado. La API corre
 separada del backend Spring Boot.
@@ -20,16 +20,13 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
    Get-Service 'postgresql*'
    # Solo si el servicio está detenido; puede requerir PowerShell como administrador:
    if ((Get-Service postgresql-x64-17).Status -ne "Running") { Start-Service postgresql-x64-17 }
-   psql -h 127.0.0.1 -U postgres -d postgres -f .\migrations\001_monitoreo_clave_privacidad.sql
    ```
 
    El esquema de activos y las tablas `monitoreo_snmp`, `clusters` y `datacenters`
-   deben existir antes de ejecutar esa migración. Si `psql` no está en `PATH`, usa
-   `C:\Program Files\PostgreSQL\17\bin\psql.exe`. La migración agrega
-   `clave_privacidad` para agentes con claves SNMPv3 diferentes; se puede ejecutar
-   de nuevo sin duplicar la columna.
+   deben existir. Las instalaciones nuevas usan `schema.sql`. La conexión guarda
+   una sola `clave`, utilizada para autenticación y privacidad SNMPv3.
 
-2. **Iniciar los diecisiete agentes SNMP**:
+2. **Iniciar los dieciocho agentes SNMP**:
 
    ```powershell
    cd C:\INGESOFT\ETL_INFRA_TI
@@ -145,21 +142,20 @@ En una lectura exitosa, el ETL compara los datos SNMP con `activo`, su subtipo y
 componentes. Actualiza únicamente los valores cambiados, conserva los campos
 administrativos del front, añade las métricas a `metrica_historica` y escribe
 `activo.ultima_actualizacion` en cada lectura exitosa, incluso sin otros cambios.
-Esta columna y `monitoreo_snmp.fecha_ultima_actualizacion` guardan la misma marca
-UTC de la consulta exitosa. Los cambios de `estado_operativo` y de `estado` en
+Esta columna guarda la marca UTC de la consulta exitosa y el programador la
+usa junto con la frecuencia de `monitoreo_snmp` para decidir la siguiente lectura. Los cambios de `estado_operativo` y de `estado` en
 componentes generan filas en `historico_estado`; los componentes nuevos o que dejan
 de reportarse también generan un evento. Una pieza reemplazable ausente se elimina físicamente, tras confirmar la lectura;
 el evento de presencia se conserva. Los puertos y slots conservan sus filas,
 incluso apagados o libres. Si falla SNMP
 y la conexión estaba `Activo`, pasa a `Sin conexión` y se registra el evento; al
 recuperarse vuelve a `Activo` y se registra otro. Los fallos repetidos no duplican eventos. Si falla
-SNMP, no se modifican ni `activo.ultima_actualizacion` ni
-`monitoreo_snmp.fecha_ultima_actualizacion`: ambas conservan la última lectura
-exitosa. La hora del fallo se guarda únicamente en el evento de estado.
+SNMP, no se modifica `activo.ultima_actualizacion`: conserva la última lectura
+exitosa. Los intentos fallidos se controlan en memoria para respetar la frecuencia. La hora del fallo se guarda únicamente en el evento de estado.
 
 ## Datos simulados
 
-Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los diecisiete
+Los archivos `data/<agente>/public.snmprec` contienen las respuestas SNMP de los dieciocho
 agentes. Los MIB y los documentos de mapeo de OID están en `mibs/`; los Huawei en
 [`mibs/huawei/MAPEO-HUAWEI.md`](mibs/huawei/MAPEO-HUAWEI.md). Para cambiar
 una simulación, edita su archivo de datos y ejecuta las dos verificaciones de la
@@ -238,8 +234,8 @@ solo las variables personalizadas `API_HOST` y `API_PORT`.
 
 ### Agentes simulados
 
-Para los diecisiete agentes usa el comando del paso 2 de «Arranque local completo».
-`data/start_agents.bat` inicia los diecisiete en ventanas visibles;
+Para los dieciocho agentes usa el comando del paso 2 de «Arranque local completo».
+`data/start_agents.bat` inicia los dieciocho en ventanas visibles;
 `data/stop_agents.bat` los detiene, incluido el blade 3.
 El wrapper `data/run_responder.py` carga solamente la variación `numeric`,
 que es la única usada por los archivos `.snmprec`; los módulos opcionales
@@ -254,7 +250,6 @@ documentadas en [el README del DL380](data/hpe-dl380-01/README.md). El endpoint 
 ```powershell
 $apiKey = Read-Host "ETL_API_KEY configurada en la API" -AsSecureString
 $authKey = Read-Host "Clave de autenticación SNMP del DL380" -AsSecureString
-$privKey = Read-Host "Clave de privacidad SNMP del DL380" -AsSecureString
 
 $headers = @{
     "X-API-Key" = [System.Net.NetworkCredential]::new("", $apiKey).Password
@@ -263,7 +258,6 @@ $body = @{
     ip_gestion = "127.0.0.11:16100"
     usuario = "monitor_dl380"
     clave = [System.Net.NetworkCredential]::new("", $authKey).Password
-    clave_privacidad = [System.Net.NetworkCredential]::new("", $privKey).Password
 } | ConvertTo-Json
 
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8001/api/etl/probar-conexion" `
@@ -273,7 +267,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8001/api/etl/probar-conexi
 Se acepta IP o nombre DNS, con puerto opcional (161 por defecto). Para IPv6 con puerto,
 usar `[::1]:16100`; una IPv6 sin corchetes se interpreta completa, con puerto 161.
 No se aceptan URL, rutas, puertos fuera de 1–65535 ni campos vacíos.
-La privacidad usa la clave de autenticación si `clave_privacidad` falta o es null.
+Autenticación y privacidad utilizan siempre la misma `clave`.
 
 Si se configuraron redes permitidas, se comprueban todas las direcciones resueltas del nombre
 DNS; un destino con direcciones fuera de las redes se rechaza con 422. Se consulta la IP
@@ -425,10 +419,10 @@ conexión no requiere estas variables. Instalar las dependencias actualizadas de
 `requirements.txt`, incluido el controlador `psycopg2-binary`.
 
 Las instalaciones nuevas deben partir de `schema.sql`, exportado del esquema
-vigente: incluye `clave_privacidad VARCHAR(255)` y `activo.ultima_actualizacion`
-como `TIMESTAMP WITHOUT TIME ZONE`. Las instalaciones antiguas deben revisar
-`migrations/001_monitoreo_clave_privacidad.sql` y
+del proyecto: `activo.ultima_actualizacion` es `TIMESTAMP WITHOUT TIME ZONE`.
+Las instalaciones antiguas con DATE deben revisar
 `migrations/002_activo_ultima_actualizacion_hora.sql` antes del despliegue.
+No se requieren columnas adicionales en `monitoreo_snmp`; la migración 001 queda obsoleta.
 El ETL no aplica DDL automáticamente. `python -m etl.esquema` comprueba el contrato
 y el programador se detiene con un mensaje claro si falta alguna columna o tipo. Debe existir el datacenter y el clúster antes de crear el activo.
 
@@ -445,9 +439,8 @@ Enviar `X-API-Key` y este cuerpo a `POST /api/etl/crear-activo`:
 `cluster_id` corresponde a `clusters.nombre`, la clave primaria textual del esquema;
 no existe un ID numérico de clúster. El tipo de equipo se detecta por SNMP; para servidores HPE, RACKEABLE o BLADE
 se infiere del modelo. No se reciben IP, usuario, contraseña ni ubicación en esta petición.
-El ETL obtiene IP y credenciales de la conexión. `clave` se usa para autenticación
-SNMPv3; `clave_privacidad` para privacidad. Cuando la segunda es NULL se utiliza
-`clave` para ambas. El datacenter proviene de `clusters.datacenter`.
+El ETL obtiene IP y credenciales de la conexión. `clave` se usa tanto para
+autenticación como para privacidad SNMPv3. El datacenter proviene de `clusters.datacenter`.
 
 Se admiten los perfiles simulados HPE ProLiant (rack y blade), ArubaOS-CX,
 HPE StorageWorks con arreglo Fibre Channel, HPE BladeSystem c7000, Huawei
@@ -501,15 +494,14 @@ Respuestas:
 
 Las mediciones se almacenan en UTC en el TIMESTAMP sin zona de `fecha_medicion`;
 `activo.ultima_actualizacion` conserva fecha y hora UTC de la última lectura SNMP
-exitosa, igual que `monitoreo_snmp.fecha_ultima_actualizacion`. El frontend la
-muestra en hora de Lima. Una consulta SNMP fallida no modifica ninguna de las dos.
+exitosa. El frontend la muestra en hora de Lima. Una consulta SNMP fallida
+no modifica esa fecha.
 
 Antes de iniciar esta versión del ETL y del backend, aplica una vez
 `migrations/002_activo_ultima_actualizacion_hora.sql` a la base configurada en
 `DATABASE_URL`. La migración amplía `activo.ultima_actualizacion` de `DATE` a
-`TIMESTAMP`; recupera la hora de `monitoreo_snmp` para activos vinculados. Para
-activos antiguos sin esa marca, conserva el día a las 00:00 UTC porque la hora
-original no se almacenó.
+`TIMESTAMP`. Para activos antiguos, conserva el día a las 00:00 UTC porque
+la hora original no se almacenó. No es necesario ejecutarla si el campo ya es TIMESTAMP.
 
 Verificación de esta etapa:
 
@@ -559,8 +551,8 @@ y revierten los datos insertados por cada prueba al finalizar.
 
 ## Cifrado de credenciales SNMP
 
-El backend escribe `clave` y `clave_privacidad` con AES-256-GCM, nonce aleatorio
-de 12 bytes y autenticación separada por campo. Python descifra únicamente al
+El backend escribe únicamente `monitoreo_snmp.clave` con AES-256-GCM y nonce
+aleatorio de 12 bytes. La misma clave descifrada se utiliza en ambas funciones SNMPv3. Python descifra únicamente al
 preparar una consulta SNMP. El formato compartido es `enc:v1:` seguido de Base64
 URL sin relleno de nonce, texto cifrado y tag de 16 bytes. Las respuestas HTTP,
 resultados y logs no incluyen las claves. El usuario SNMP se mantiene legible.
@@ -613,4 +605,104 @@ historial y alertas se presentan explícitamente en la zona America/Lima.
 
 ## Despliegue Linux con Docker y PostgreSQL en AWS
 
-La configuración de los cinco servicios, el uso de la llave original, TLS hacia AWS y las verificaciones previas están en [despliegue/README.md](despliegue/README.md). Se mantienen 5173, 8080, 8001 y las direcciones de los 17 simuladores. No se crea una base local ni se modifica el esquema automáticamente.
+La configuración de los cinco servicios, el uso de la llave original, TLS hacia AWS y las verificaciones previas están en [despliegue/README.md](despliegue/README.md). Se mantienen 5173, 8080, 8001 y las direcciones de los 18 simuladores. No se crea una base local ni se modifica el esquema automáticamente.
+
+### Contrato de nombres de métricas
+
+Las nuevas filas de `metrica_historica` usan exclusivamente el catálogo validado
+en `etl/metricas.py`: `<recurso>_<magnitud>_<unidad>`, minúsculas, sin tildes ni ñ.
+El nombre indica la unidad realmente almacenada. Las columnas de inventario de
+`activo`, como `temperatura` y `consumo_electrico_w`, mantienen sus nombres.
+Los históricos anteriores no se reescriben ni eliminan.
+
+| ID | Nombre persistido |
+|---|---|
+| MT-01 | `cpu_uso_ghz` |
+| MT-02 | `ram_uso_gb` |
+| MT-03 | `disco_uso_gb` |
+| MT-04 | `equipo_temperatura_c` |
+| MT-05 | `equipo_consumo_w` |
+| MT-06 | `red_trafico_entrada_mbps`, `red_trafico_salida_mbps` |
+| MT-07 | `almacenamiento_uso_tb` |
+| MT-08 | `almacenamiento_iops` |
+| MT-09 | `red_ancho_banda_mbps` |
+| MT-10 | `almacenamiento_latencia_ms` |
+| MT-11 | `almacenamiento_throughput_lectura_mbps`, `almacenamiento_throughput_escritura_mbps` |
+| MT-12 | `red_utilizacion_pct` |
+
+El catálogo define nombres; solo se genera una medición cuando hay datos válidos
+para obtenerla. No se inventa disco ocupado ni throughput cuando el perfil no
+los extrae. El uso CPU/RAM porcentual de Aruba se convierte a GHz/GB con las
+capacidades de sus componentes; si faltan, se omite esa medición.
+
+En cada alta o actualización exitosa del storage se guarda
+`almacenamiento_uso_tb`, incluso sin cambios. Total y usada siguen disponibles
+en `storage`; la capacidad libre se obtiene como total menos usada.
+
+### Tráfico, velocidad y utilización por puerto
+
+`etl/metricas_red.py` consulta dos veces los contadores del mismo puerto dentro
+de cada ciclo, con una espera mínima de un segundo y tiempo transcurrido real.
+Preferencia: `ifHCInOctets`/`ifHCOutOctets` (64 bits); respaldo IF-MIB o CPQNIC
+de 32 bits. Los datos se guardan por `componente_tipo` y `componente_serial`;
+`if:<indice>` y `cpqnic:<indice>` identifican el origen SNMP sin ser claves foráneas.
+
+`trafico_mbps = (contador_actual - contador_anterior) * 8 / segundos / 1000000`.
+
+Entrada y salida se guardan separadas. En full duplex,
+`red_utilizacion_pct = max(entrada_mbps, salida_mbps) / ancho_banda_mbps * 100`.
+La velocidad de puertos FC normalizados en Gbps se convierte a Mbps multiplicando
+por 1000. No se mezclan interfaces virtuales, VLAN o agregaciones con puertos físicos.
+
+Se omite la tasa ante un cambio de interfaz, reinicio/discontinuidad, puerto caído
+o tiempo inválido. En Counter32 se descartan intervalos con posibles vueltas
+múltiples; una vuelta se acepta solo con marcador de discontinuidad y uptime
+consistentes. Un contador que no cambia produce tráfico cero; uno ausente no.
+No se agregan tablas ni columnas; la persistencia queda dentro de la transacción
+del registro/actualización. Un fallo de lectura no actualiza la fecha del activo.
+
+Fuentes del cálculo: [RFC 2863](https://www.rfc-editor.org/rfc/rfc2863.html) y
+[Cisco: How To Calculate Bandwidth Utilization Using SNMP](https://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/8141-calculate-bandwidth-snmp.html).
+
+### Cobertura completa MT-01 a MT-12 en el laboratorio
+
+- Servidores HPE y Huawei (rack y blade): CPU, RAM, ocupación de volúmenes,
+  temperatura, consumo, tráfico por dirección, velocidad y utilización de red.
+- Storage HPE y Huawei: capacidad usada, IOPS, latencia, throughput de lectura y
+  escritura, temperatura, consumo y métricas de red. HPE conserva las fuentes
+  prestadas y del host administrador ya documentadas.
+- Switch Aruba: CPU, RAM, temperatura, consumo y métricas por puerto.
+- Chasis HPE/Huawei: temperatura, consumo y métricas de sus puertos.
+
+Los volúmenes HPE usan CPQHOST-MIB (`...232.11.2.4.1.1.3/.4`). Huawei usa
+HOST-RESOURCES-MIB (`...25.2.3.1.4/.5/.6`) como extensión del agente de laboratorio;
+se incluyen solo volúmenes de disco fijo y se excluyen RAM y swap. El espacio
+ocupado se suma en `disco_uso_gb`; valores desconocidos o inconsistentes no se
+convierten en cero.
+
+En HPE storage se hacen dos consultas a los contadores Nimble ya simulados:
+IOPS = diferencia de operaciones / segundos; latencia media = diferencia del
+servicio acumulado en microsegundos / operaciones / 1000; throughput = diferencia
+de bytes / segundos * 8 / 1000000. Se descarta el intervalo si los contadores se
+reinician. Sin operaciones se guarda IOPS cero, pero no una latencia inventada.
+En Huawei, ISM-PERFORMANCE-MIB aporta `hwPerfNodeReadTraffic`/`WriteTraffic` en
+MB/s; se suman los nodos y se convierten a Mbps multiplicando por ocho.
+
+El generador Huawei aplica automáticamente el complemento de métricas al guardar.
+Para completar una plantilla HPE o actualizar sin regenerar los datos del equipo:
+
+```powershell
+.\.venv\Scripts\python.exe -B data/completar_metricas_agentes.py
+.\.venv\Scripts\python.exe -B data/validar_snmprec.py
+```
+
+Este complemento conserva identidad y estados existentes y es idempotente.
+Después de cambiar un snmprec hay que reiniciar sus agentes para recargarlo.
+La validación funcional, que solo consulta SNMP y no escribe en PostgreSQL, es:
+
+```powershell
+.\.venv\Scripts\python.exe -B data/validar_metricas.py --salida .\logs\validacion-mt
+```
+
+Exige los nombres aplicables a cada tipo, revisa valores/unidades e identificación
+de puertos y genera evidencia JSON y Markdown. La BD mantiene su esquema actual.

@@ -1,4 +1,4 @@
-"""Supervisa los 17 simuladores; --verificar realiza solo lecturas SNMP."""
+"""Supervisa los simuladores definidos en el manifiesto; --verificar realiza solo lecturas SNMP."""
 import argparse
 import asyncio
 import json
@@ -14,8 +14,8 @@ DATA = Path(__file__).resolve().parent
 def cargar_agentes():
     agentes = json.loads((DATA / 'agentes-docker.json').read_text(encoding='utf-8'))
     destinos = {(a['host'], a['puerto']) for a in agentes}
-    if len(agentes) != 17 or len(destinos) != 17:
-        raise RuntimeError('Se requieren los 17 destinos únicos del laboratorio.')
+    if not agentes or len(destinos) != len(agentes) or len({a['nombre'] for a in agentes}) != len(agentes) or len({a['engine_id'] for a in agentes}) != len(agentes):
+        raise RuntimeError('Los agentes requieren nombres, destinos y engine ID únicos.')
     for agente in agentes:
         if not (DATA / agente['nombre'] / 'public.snmprec').is_file():
             raise RuntimeError('Faltan datos del agente ' + agente['nombre'])

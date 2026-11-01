@@ -27,7 +27,8 @@ async def extraer_storage_huawei(conexion):
     return await leer_perfil(conexion, escalares=("1.3.6.1.2.1.1.1.0",),
                             subarboles=("1.3.6.1.4.1.34774.4.1",
                                         "1.3.6.1.2.1.47.1.1.1.1.7",
-                                        "1.3.6.1.2.1.99.1.1.1"))
+                                        "1.3.6.1.2.1.99.1.1.1",
+                                        "1.3.6.1.2.1.2.2.1", "1.3.6.1.2.1.31.1.1.1"))
 
 
 async def extraer_storage(conexion, fabricante="HPE"):

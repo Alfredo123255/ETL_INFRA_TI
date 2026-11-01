@@ -13,7 +13,7 @@ from etl.detector import FABRICANTES, detectar_tipo, fabricante
 from etl.snmp_cliente import mapear_error
 
 CFG = Configuracion(SecretStr("api-test"))
-BODY = dict(ip_gestion="127.0.0.1:16100", usuario="monitor", clave="secreto-auth", clave_privacidad="secreto-priv")
+BODY = dict(ip_gestion="127.0.0.1:16100", usuario="monitor", clave="secreto-auth")
 HEADERS = {"X-API-Key": "api-test"}
 SUCCESS = dict(ok=True, descripcion="Equipo", sys_object_id="1.3.6.1.4.1.232.1",
                sys_name="equipo", fabricante="HPE", tipo_detectado="SERVIDOR", milisegundos=1)

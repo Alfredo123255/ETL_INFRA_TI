@@ -13,12 +13,12 @@ def convertir(config, *, verificar=False):
         raise BaseNoDisponible("Configura y respalda la llave externa antes de convertir credenciales.")
     revisadas = convertidas = 0
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("SELECT id,clave,clave_privacidad FROM monitoreo_snmp ORDER BY id FOR UPDATE")
-        for identificador, clave, privacidad in cur.fetchall():
+        cur.execute("SELECT id,clave FROM monitoreo_snmp ORDER BY id FOR UPDATE")
+        for identificador, clave in cur.fetchall():
             revisadas += 1
             valores = []
             cambio = False
-            for campo, valor in (("clave", clave), ("clave_privacidad", privacidad)):
+            for campo, valor in (("clave", clave),):
                 plano = descifrar(valor, config.credential_key, campo)
                 pendiente = valor is not None and not valor.startswith("enc:v1:")
                 cambio |= pendiente
@@ -26,7 +26,7 @@ def convertir(config, *, verificar=False):
             if cambio:
                 convertidas += 1
                 if not verificar:
-                    cur.execute("UPDATE monitoreo_snmp SET clave=%s,clave_privacidad=%s WHERE id=%s", (*valores, identificador))
+                    cur.execute("UPDATE monitoreo_snmp SET clave=%s WHERE id=%s", (*valores, identificador))
     return {"conexiones_revisadas": revisadas, "pendientes" if verificar else "convertidas": convertidas}
 
 

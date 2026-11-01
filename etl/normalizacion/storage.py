@@ -71,7 +71,7 @@ def normalizar_storage_hpe(datos, *, fecha_actualizacion):
     # La energía y la temperatura corresponden al host administrador; el arreglo no expone esas magnitudes.
     return {"activo":activo,"storage":{"protocolo_comunicacion":"Fibre Channel",
         "capacidad_total_tb":total_tb,"capacidad_usada_tb":used,"iops":None},
-        "componentes":componentes,"mediciones":host["mediciones"],
+        "componentes":componentes,"mediciones":[m for m in host["mediciones"] if m["nombre_metrica"] != "disco_uso_gb"],
         "ubicacion_snmp":texto(datos.get(SYSTEM["ubicacion"]))}
 
 
@@ -196,6 +196,13 @@ def normalizar_storage_huawei(datos, *, fecha_actualizacion):
     latencias = [numero(f.get("latencia")) for _, f in nodos]
     latencia = Decimal(sum(latencias)) / len(latencias) if latencias and all(
         x is not None for x in latencias) else None
+    trafico = filas(datos, {"lectura": d + ".21.3.1.9", "escritura": d + ".21.3.1.10"})
+    rendimiento = []
+    for campo, nombre in (("lectura", "almacenamiento_throughput_lectura_mbps"),
+                          ("escritura", "almacenamiento_throughput_escritura_mbps")):
+        valores = [numero(f.get(campo)) for _, f in trafico]
+        if valores and all(v is not None and v >= 0 for v in valores):
+            rendimiento.append((nombre, sum(valores) * 8))  # MIB: MB/s -> Mbps.
     temperaturas = [numero(f.get("temp")) for _, f in filas(datos, {"temp": disco + ".11"})]
     temperaturas = [x for x in temperaturas if x is not None]
     descripcion = _s(datos, "1.3.6.1.2.1.1.1.0")
@@ -215,7 +222,7 @@ def normalizar_storage_huawei(datos, *, fecha_actualizacion):
                             "ram": memoria,
                             "fuente_poder": fuentes, "ventilador": ventiladores,
                             "tarjeta_red": tarjetas},
-            "mediciones": _mediciones(activo, (("iops", iops), ("latencia_ms", latencia))),
+            "mediciones": _mediciones(activo, [("iops", iops), ("latencia_ms", latencia), *rendimiento]),
             "ubicacion_snmp": _s(datos, SYSTEM["ubicacion"])}
 
 

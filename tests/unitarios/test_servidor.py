@@ -20,7 +20,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 def registros(agente):
     tipos = {"2": rfc1902.Integer, "4": rfc1902.OctetString,
              "6": rfc1902.ObjectIdentifier, "64": rfc1902.IpAddress,
-             "65": rfc1902.Counter32, "66": rfc1902.Gauge32, "67": rfc1902.TimeTicks}
+             "70": rfc1902.Counter64, "65": rfc1902.Counter32, "66": rfc1902.Gauge32, "67": rfc1902.TimeTicks}
     datos = {}
     for linea in (RAIZ / "data" / agente / "public.snmprec").read_text().splitlines():
         oid, etiqueta, valor = linea.split("|", 2)
@@ -30,7 +30,7 @@ def registros(agente):
             tipo, _, variacion = etiqueta.partition(":")
             if variacion:
                 valor = dict(item.split("=") for item in valor.split(","))["initial"]
-            dato = tipos[tipo](int(valor) if tipo in ("2", "65", "66", "67") else valor)
+            dato = tipos[tipo](int(valor) if tipo in ("2", "65", "66", "67", "70") else valor)
         datos[oid] = dato
     return datos
 
@@ -223,7 +223,10 @@ async def test_extraccion_reutiliza_sesion_y_filtra_columnas(monkeypatch):
     assert "1.3.6.1.4.1.232.3.2.5.1.1.51.1.1" in resultado
     assert "1.3.6.1.4.1.232.3.2.5.1.1.25.1.1" not in resultado
     assert "1.3.6.1.2.1.47.1.1.1.1.11.1001" in resultado
-    assert cliente.recorrer.await_count == 13
+    raices = {c.args[0] for c in cliente.recorrer.await_args_list}
+    assert {"1.3.6.1.4.1.232.11.2.4.1.1", "1.3.6.1.2.1.25.2.3.1",
+            "1.3.6.1.2.1.2.2.1", "1.3.6.1.2.1.31.1.1.1"} <= raices
+    assert "1.3.6.1.4.1.232.11.2.4.1.1.4.1" in resultado
     contexto.__exit__.assert_called_once()
 
 
@@ -254,6 +257,7 @@ async def test_registro_prepara_ficha_sin_credenciales(monkeypatch):
         "ok": True, "fabricante": "HPE", "tipo_detectado": "SERVIDOR",
         "sys_object_id": str(datos[OIDS_IDENTIDAD["sys_object_id"]])}))
     monkeypatch.setattr(ciclo, "extraer_servidor", AsyncMock(return_value=datos))
+    monkeypatch.setattr(ciclo, "agregar_metricas_red", AsyncMock())
     ficha = await ciclo.preparar_registro_servidor(CONEXION, MagicMock(), ip_gestion="equipo.local:161")
     assert ficha["activo"]["ip_gestion"] == "equipo.local:161"
     assert isinstance(ficha["activo"]["ultima_actualizacion"], date)

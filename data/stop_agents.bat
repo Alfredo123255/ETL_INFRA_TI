@@ -4,7 +4,7 @@ REM mano con run_responder.py), cerrando tambien sus ventanas cmd.
 REM
 REM Busca los procesos cmd.exe / python.exe cuya linea de comandos contiene
 REM "run_responder.py" y los termina junto con su arbol de procesos.
-REM Incluye hpe-bl460c-03 y todos los demas agentes, sin depender del puerto.
+REM Incluye hpe-dl380-02, hpe-bl460c-03 y los demas agentes, sin depender del puerto.
 
 setlocal
 

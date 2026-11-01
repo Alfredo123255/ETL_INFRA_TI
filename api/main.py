@@ -55,8 +55,7 @@ def crear_app(config=None):
         async with request.app.state.semaforo:
             try:
                 address = await resolver_destino(host, port, config.redes_permitidas, config.snmp_timeout)
-                result = await probar_conexion(address, port, body.usuario, body.clave,
-                                               body.clave_privacidad, config)
+                result = await probar_conexion(address, port, body.usuario, body.clave, config)
             except HTTPException:
                 raise
             except TimeoutError:
@@ -81,7 +80,7 @@ def crear_app(config=None):
                 except ValueError:
                     raise DatosIncompletos("El destino guardado en la conexión es inválido.") from None
                 address = await resolver_destino(host, puerto, config.redes_permitidas, config.snmp_timeout)
-                conexion = ConexionSNMP(address, puerto, referencias.usuario, referencias.clave, referencias.clave_privacidad,
+                conexion = ConexionSNMP(address, puerto, referencias.usuario, referencias.clave,
                     config.snmp_context_name, config.snmp_timeout, config.snmp_retries)
                 ficha = await preparar_registro_activo(conexion, config,
                     ip_gestion=referencias.ip_gestion)

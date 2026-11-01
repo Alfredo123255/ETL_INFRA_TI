@@ -2,11 +2,12 @@
 
 Estos valores corresponden **solo a los simuladores locales de laboratorio** en `data/`. No son usuarios ni contraseñas de PostgreSQL, del backend ni de la API ETL.
 
-Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNMP `public`. En el formulario «Registrar por SNMP» ingresa el destino, usuario y **clave de autenticación**; la clave de privacidad se resuelve internamente. La columna de privacidad sirve para una consulta SNMPv3 directa.
+Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNMP `public`. En el formulario «Registrar por SNMP» ingresa el destino, usuario y **clave de autenticación**; la misma clave se utiliza internamente para autenticación y privacidad. La columna de privacidad sirve para una consulta SNMPv3 directa.
 
 | Equipo | Tipo | IP y puerto UDP | Usuario SNMPv3 | Clave de autenticación | Clave de privacidad |
 | --- | --- | --- | --- | --- | --- |
 | `hpe-dl380-01` | Servidor rack | `127.0.0.11:16100` | `HPE` | `Enterprise` | `Enterprise` |
+| `hpe-dl380-02` | Servidor rack | `127.0.0.17:17800` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-dl360-01` | Servidor rack | `127.0.0.12:16200` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-bl460c-01` | Servidor blade | `127.0.0.13:16400` | `HPE` | `Enterprise` | `Enterprise` |
 | `hpe-bl460c-02` | Servidor blade | `127.0.0.14:16500` | `HPE` | `Enterprise` | `Enterprise` |

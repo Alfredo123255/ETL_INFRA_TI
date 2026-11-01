@@ -23,6 +23,9 @@ async def extraer_servidor_hpe(conexion):
         valores = await sesion.recorrer(raiz)
         prefijos = tuple(oid + "." for oid in OIDS_ENTIDAD_NIC.values())
         datos.update((oid, valor) for oid, valor in valores.items() if oid.startswith(prefijos))
+        for raiz in ("1.3.6.1.4.1.232.11.2.4.1.1", "1.3.6.1.2.1.25.2.3.1",
+                     "1.3.6.1.2.1.2.2.1", "1.3.6.1.2.1.31.1.1.1"):
+            datos.update(await sesion.recorrer(raiz))
         return datos
 
 async def extraer_servidor(conexion, fabricante):
@@ -36,4 +39,4 @@ async def extraer_servidor(conexion, fabricante):
 async def extraer_servidor_huawei(conexion):
     return await leer_perfil(conexion, escalares=("1.3.6.1.2.1.1.1.0",), subarboles=(
         "1.3.6.1.4.1.2011.2.235.1.1", "1.3.6.1.2.1.2.2.1",
-        "1.3.6.1.2.1.31.1.1.1"))
+        "1.3.6.1.2.1.31.1.1.1", "1.3.6.1.2.1.25.2.3.1"))

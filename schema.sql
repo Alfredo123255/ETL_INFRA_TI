@@ -350,9 +350,7 @@ CREATE TABLE public.monitoreo_snmp (
     clave character varying NOT NULL,
     frecuencia_actualizacion integer NOT NULL,
     estado_conexion character varying,
-    fecha_ultima_actualizacion timestamp without time zone,
     activo_id integer,
-    clave_privacidad character varying(255),
     CONSTRAINT monitoreo_snmp_estado_conexion_check CHECK (((estado_conexion)::text = ANY ((ARRAY['Activo'::character varying, 'Inactivo'::character varying, 'Sin conexión'::character varying])::text[])))
 );
 
