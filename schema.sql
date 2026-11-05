@@ -770,6 +770,9 @@ CREATE INDEX idx_metrica_historica_activo ON public.metrica_historica USING btre
 
 CREATE INDEX idx_metrica_historica_fecha ON public.metrica_historica USING btree (fecha_medicion);
 
+CREATE INDEX idx_metrica_activo_nombre_fecha
+    ON public.metrica_historica (activo_id, nombre_metrica, fecha_medicion);
+
 
 --
 -- Name: activo activo_cluster_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
