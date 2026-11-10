@@ -23,6 +23,9 @@ def interfaces(datos, tipo):
             "hc_in": IFX+".6", "hc_out": IFX+".10", "in": IF+".10", "out": IF+".16"}):
         if numero(f.get("tipo")) not in (6, 56):
             continue
+        if tipo == "SWITCH" and (numero(f.get("tipo")) != 6 or
+                not re.fullmatch(r"\d+/\d+/\d+", texto(f.get("nombre")) or "")):
+            continue
         hc = numero(f.get("hc_in")) is not None and numero(f.get("hc_out")) is not None
         mbps = numero(f.get("mbps"))
         bps = numero(f.get("bps"))
@@ -37,7 +40,7 @@ def interfaces(datos, tipo):
             "oper": IF+".8."+indice, "disc": IFX+".19."+indice,
             "nombre_oid": IFX+".1."+indice,
             "tiene_contadores": hc or (numero(f.get("in")) is not None and numero(f.get("out")) is not None)})
-    if resultado:
+    if resultado or tipo == "SWITCH":
         return resultado
     # CPQNIC es el respaldo para servidores HPE que no ofrecen IF-MIB.
     for indice, f in filas(datos, {"mbps": CPQ+".36", "bps": CPQ+".33",
@@ -91,9 +94,13 @@ def calcular(puerto, anterior, actual):
 
 
 async def agregar_metricas_red(ficha, datos, conexion):
-    puertos = interfaces(datos, ficha["activo"]["tipo_activo"])
+    tipo = ficha["activo"]["tipo_activo"]
+    puertos = interfaces(datos, tipo)
+    if tipo == "SWITCH":
+        inventariados = {p["numero_puerto"] for p in ficha.get("componentes", {}).get("puerto_switch", [])}
+        puertos = [p for p in puertos if p["etiqueta"] in inventariados]
     mediciones = ficha.setdefault("mediciones", [])
-    if not puertos:
+    if not puertos and tipo != "SWITCH":
         # Puertos FC sin IF-MIB: la ficha ya normalizó la velocidad del MIB.
         for tarjeta in ficha.get("componentes", {}).get("tarjeta_red", []):
             for p in tarjeta.get("puertos", []):
@@ -108,7 +115,7 @@ async def agregar_metricas_red(ficha, datos, conexion):
     for p in puertos:
         if p["velocidad"] is not None:
             mediciones.append({"nombre_metrica": "red_ancho_banda_mbps", "valor": p["velocidad"],
-                "componente_tipo": p["tipo"], "componente_serial": p["id"]})
+                "componente_tipo": p["tipo"], "componente_serial": p["etiqueta"] if tipo == "SWITCH" else p["id"]})
     muestreados = [p for p in puertos if p["tiene_contadores"]]
     if not muestreados:
         return
@@ -134,4 +141,4 @@ async def agregar_metricas_red(ficha, datos, conexion):
     for p in muestreados:
         for nombre, valor in calcular(p, anterior[p["id"]], actual[p["id"]]).items():
             mediciones.append({"nombre_metrica": nombre, "valor": valor,
-                "componente_tipo": p["tipo"], "componente_serial": p["id"]})
+                "componente_tipo": p["tipo"], "componente_serial": p["etiqueta"] if tipo == "SWITCH" else p["id"]})

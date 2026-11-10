@@ -981,9 +981,89 @@ INSERT INTO public.umbral (nombre, advertencia, critico) VALUES
     ('dias_para_eos',                          30,   NULL);
 
 
+CREATE TABLE public.alerta (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    activo_id INTEGER NOT NULL
+        REFERENCES public.activo(id) ON DELETE RESTRICT,
+
+    componente_tipo VARCHAR,
+    componente_sn VARCHAR,
+    campo VARCHAR NOT NULL,
+    severidad VARCHAR NOT NULL
+        CHECK (severidad IN ('Media', 'Crítica')),
+    descripcion VARCHAR NOT NULL,
+
+    fecha_inicio TIMESTAMP WITHOUT TIME ZONE NOT NULL
+        DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+    ultima_verificacion TIMESTAMP WITHOUT TIME ZONE NOT NULL
+        DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+    fecha_resolucion TIMESTAMP WITHOUT TIME ZONE,
+
+    CONSTRAINT alerta_componente_check CHECK (
+        (componente_tipo IS NULL AND componente_sn IS NULL)
+        OR (
+            componente_tipo IS NOT NULL AND componente_sn IS NOT NULL
+            AND LENGTH(TRIM(componente_tipo)) > 0
+            AND LENGTH(TRIM(componente_sn)) > 0
+        )
+    ),
+    CONSTRAINT alerta_resolucion_check CHECK (
+        fecha_resolucion IS NULL OR fecha_resolucion >= fecha_inicio
+    )
+);
+
+-- Una condicion puede tener varios episodios resueltos, pero solo uno abierto.
+-- COALESCE incluye en la unicidad las condiciones del equipo (sin componente).
+CREATE UNIQUE INDEX alerta_condicion_abierta_uq
+    ON public.alerta (
+        activo_id,
+        COALESCE(componente_tipo, ''),
+        COALESCE(componente_sn, ''),
+        campo
+    )
+    WHERE fecha_resolucion IS NULL;
+
+
 --
 -- PostgreSQL database dump complete
 --
 
 \unrestrict oeQgBe2PRczwsy23XjIPfWFFLBY8kHVcbyRqo3fpEDqwYcjrRj9cCLvsCekHkyr
 
+
+
+-- Usuarios, roles y permisos (migración 004_usuarios_roles.sql).
+-- Acceso al sistema. No contiene usuarios, contraseñas ni hashes.
+BEGIN;
+CREATE TABLE IF NOT EXISTS public.rol (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre VARCHAR NOT NULL UNIQUE,
+    ver_inventario BOOLEAN NOT NULL DEFAULT false,
+    gestionar_conexiones BOOLEAN NOT NULL DEFAULT false,
+    editar_ciclo_vida BOOLEAN NOT NULL DEFAULT false,
+    gestionar_mantenimiento BOOLEAN NOT NULL DEFAULT false,
+    dar_baja BOOLEAN NOT NULL DEFAULT false,
+    configurar_umbrales BOOLEAN NOT NULL DEFAULT false,
+    gestionar_ubicaciones BOOLEAN NOT NULL DEFAULT false,
+    exportar BOOLEAN NOT NULL DEFAULT false,
+    administrar_usuarios BOOLEAN NOT NULL DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS public.usuario (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    correo VARCHAR NOT NULL UNIQUE,
+    contrasena_hash VARCHAR NOT NULL,
+    nombre VARCHAR NOT NULL,
+    activo BOOLEAN NOT NULL DEFAULT true,
+    rol_id INTEGER NOT NULL REFERENCES public.rol(id),
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT NOW()
+);
+INSERT INTO public.rol (nombre, ver_inventario, gestionar_conexiones, editar_ciclo_vida,
+    gestionar_mantenimiento, dar_baja, configurar_umbrales, gestionar_ubicaciones,
+    exportar, administrar_usuarios)
+VALUES
+    ('Administrador', true, true, true, true, true, true, true, true, true),
+    ('Operador', true, true, true, true, true, false, true, true, false),
+    ('Consulta', true, false, false, false, false, false, false, true, false)
+ON CONFLICT (nombre) DO NOTHING;
+COMMIT;

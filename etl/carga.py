@@ -1,6 +1,7 @@
 """Registro inicial atómico de ficha, componentes y mediciones en PostgreSQL."""
 from datetime import datetime, timezone
 import psycopg2
+from etl.alertas import evaluar_alertas
 from etl.db import conexion_bd
 from etl.errores import ActivoDuplicado, BaseNoDisponible, DatosIncompletos
 from etl.metricas import construir_metricas
@@ -42,6 +43,7 @@ def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
                 registrar_evento_estado(conexion, activo_id, CAMPO_ESTADO_CONEXION,
                     ESTADO_CONEXION_VINCULADA, DESCRIPCION_CONEXION_VINCULADA, marca_tiempo)
                 eventos += 1
+            alertas = evaluar_alertas(conexion, activo_id, fecha=marca_tiempo, lectura_snmp=True)
     except psycopg2.Error as exc:
         if exc.pgcode == "23505":
             raise ActivoDuplicado("Ya existe un activo con esa serie o hostname.") from None
@@ -53,5 +55,5 @@ def cargar_registro(config, ficha, ubicacion=None, *, referencias=None):
         "hostname": activo["hostname"], "fabricante": activo["fabricante"],
         "tipo_activo": activo["tipo_activo"], "estado_operativo": activo["estado_operativo"],
         "modelo": activo["modelo"], "ubicacion": datacenter,
-        "componentes": cantidades, "metricas_guardadas": len(metricas), "eventos_registrados": eventos,
+        "componentes": cantidades, "metricas_guardadas": len(metricas), "eventos_registrados": eventos, "alertas": alertas,
         **({"conexion_id": referencias.conexion_id, "cluster_id": referencias.cluster_id} if referencias else {})}

@@ -69,7 +69,7 @@ def entorno(monkeypatch):
                     frecuencia_actualizacion,estado_conexion,activo_id)
                     VALUES ('127.0.0.1:1','test','test',60,'Activo',%s) RETURNING id""", (activo_id,))
                 conexion_id = cur.fetchone()[0]
-            referencia = monitoreo.ConexionMonitoreo(conexion_id, activo_id, "127.0.0.1:1", "test", SecretStr("test"), None)
+            referencia = monitoreo.ConexionMonitoreo(conexion_id, activo_id, "127.0.0.1:1", "test", SecretStr("test"))
             ficha = {"activo": {"numero_serie": nombre, "hostname": nombre, "ubicacion": marca,
                                 "tipo_activo": tipo, "estado_operativo": "Encendido"},
                      tabla: datos_subtipo, "componentes": {}, "mediciones": []}

@@ -55,7 +55,7 @@ def test_cero_es_una_tasa_real_y_no_un_dato_ausente():
 
 
 def test_prefiere_counter64_y_filtra_interfaces_virtuales():
-    datos = {red.IF+".3.1":6,red.IFX+".15.1":10000,red.IF+".10.1":10,
+    datos = {red.IF+".3.1":6,red.IFX+".1.1":"1/1/1",red.IFX+".15.1":10000,red.IF+".10.1":10,
         red.IF+".16.1":20,red.IFX+".6.1":2**33,red.IFX+".10.1":2**34,
         red.IF+".3.2":135,red.IFX+".15.2":10000,red.IFX+".6.2":1,red.IFX+".10.2":1}
     p = red.interfaces(datos,"SWITCH")
@@ -64,21 +64,21 @@ def test_prefiere_counter64_y_filtra_interfaces_virtuales():
 
 
 async def test_dos_lecturas_por_ciclo_con_puerto_identificado(monkeypatch):
-    datos = {red.IF+".3.1":6,red.IFX+".15.1":1000,red.IFX+".6.1":1,red.IFX+".10.1":1}
+    datos = {red.IF+".3.1":6,red.IFX+".1.1":"1/1/1",red.IFX+".15.1":1000,red.IFX+".6.1":1,red.IFX+".10.1":1}
     conexion = MagicMock()
     sesion = MagicMock()
     sesion.obtener = AsyncMock(side_effect=[
         {red.IFX+".6.1":1000000000,red.IFX+".10.1":0,red.IF+".8.1":1,
-         red.UPTIME:1000,red.IFX+".19.1":0,red.IFX+".1.1":"eth0"},
+         red.UPTIME:1000,red.IFX+".19.1":0,red.IFX+".1.1":"1/1/1"},
         {red.IFX+".6.1":1600000000,red.IFX+".10.1":300000000,red.IF+".8.1":1,
-         red.UPTIME:7000,red.IFX+".19.1":0,red.IFX+".1.1":"eth0"}])
+         red.UPTIME:7000,red.IFX+".19.1":0,red.IFX+".1.1":"1/1/1"}])
     contexto = MagicMock()
     contexto.return_value.__enter__.return_value = sesion
     monkeypatch.setattr(red,"SesionSNMP",contexto)
     monkeypatch.setattr(red.asyncio,"sleep",AsyncMock())
     reloj=iter([0,0,60,60])
     monkeypatch.setattr(red,"monotonic",lambda:next(reloj))
-    ficha={"activo":{"tipo_activo":"SWITCH"},"mediciones":[]}
+    ficha={"activo":{"tipo_activo":"SWITCH"},"componentes":{"puerto_switch":[{"numero_puerto":"1/1/1"}]},"mediciones":[]}
     await red.agregar_metricas_red(ficha,datos,conexion)
     assert sesion.obtener.await_count==2
     valores={m["nombre_metrica"]:m["valor"] for m in ficha["mediciones"]}
@@ -86,7 +86,7 @@ async def test_dos_lecturas_por_ciclo_con_puerto_identificado(monkeypatch):
     assert valores["red_trafico_salida_mbps"]==40
     assert valores["red_utilizacion_pct"]==8
     assert valores["red_ancho_banda_mbps"]==1000
-    assert all(m["componente_serial"]=="if:1" for m in ficha["mediciones"])
+    assert all(m["componente_serial"]=="1/1/1" for m in ficha["mediciones"])
 
 
 async def test_puerto_fc_convierte_gbps_a_mbps_sin_inventar_contadores():
@@ -119,3 +119,31 @@ def test_no_convierte_porcentaje_a_ghz_sin_capacidad_conocida():
 def test_rechaza_nombres_fuera_de_catalogo(nombre):
     with pytest.raises(DatosIncompletos):
         construir_metricas("SERVIDOR",{"mediciones":[{"nombre_metrica":nombre,"valor":1}]},datetime.now())
+
+
+def test_switch_excluye_gestion_fc_y_nombres_que_no_son_puertos():
+    datos = {}
+    for indice,tipo,nombre in [(42,6,"1/1/1"),(2,6,"mgmt"),(3,56,"1/1/3"),(4,6,"vlan10")]:
+        datos.update({f"{red.IF}.3.{indice}":tipo, f"{red.IFX}.1.{indice}":nombre,
+                      f"{red.IFX}.15.{indice}":1000})
+    assert [p["etiqueta"] for p in red.interfaces(datos,"SWITCH")] == ["1/1/1"]
+    assert red.interfaces(datos,"STORAGE")[0]["id"] == "if:2"
+
+
+async def test_switch_excluye_interfaces_ausentes_del_inventario(monkeypatch):
+    datos={red.IF+".3.42":6,red.IFX+".1.42":"1/1/42",red.IFX+".15.42":1000,
+           red.IFX+".6.42":1,red.IFX+".10.42":1}
+    sesion=MagicMock();monkeypatch.setattr(red,"SesionSNMP",sesion)
+    ficha={"activo":{"tipo_activo":"SWITCH"},"componentes":{"puerto_switch":[{"numero_puerto":"1/1/1"}]}}
+    await red.agregar_metricas_red(ficha,datos,None)
+    assert ficha["mediciones"] == []
+    sesion.assert_not_called()
+
+
+@pytest.mark.parametrize("indice",[1,42])
+async def test_switch_conserva_nombre_si_cambia_ifindex(indice):
+    ficha={"activo":{"tipo_activo":"SWITCH"},"componentes":{"puerto_switch":[{"numero_puerto":"1/1/1"}]}}
+    datos={f"{red.IF}.3.{indice}":6,f"{red.IFX}.1.{indice}":"1/1/1",f"{red.IFX}.15.{indice}":1000}
+    await red.agregar_metricas_red(ficha,datos,None)
+    assert ficha["mediciones"] == [{"nombre_metrica":"red_ancho_banda_mbps","valor":1000,
+                                   "componente_tipo":"puerto_switch","componente_serial":"1/1/1"}]

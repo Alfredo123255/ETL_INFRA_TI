@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import SecretStr
 from psycopg2.extras import RealDictCursor
 
+from etl.alertas import evaluar_alertas, etiqueta_componente, cerrar_alertas_tarjeta
 from etl.credenciales import descifrar
 from etl.ciclo import preparar_registro_activo
 from etl.db import conexion_bd
@@ -57,7 +58,7 @@ def leer_conexion(config, conexion_id):
     with conexion_bd(config) as db, db.cursor() as cur:
         cur.execute("""SELECT m.activo_id, m.ip_gestion, m.usuario, m.clave
             FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
-            WHERE m.id=%s AND a.estado_operativo <> 'Baja'
+            WHERE m.id=%s AND a.estado_operativo <> 'Baja' AND NOT a.mantenimiento_activo
             AND m.estado_conexion IN ('Activo', 'Sin conexión')""", (conexion_id,))
         row = cur.fetchone()
     if not row:
@@ -81,8 +82,7 @@ def _identificador(tabla, fila, posicion):
 
 
 def _etiqueta(tabla, fila, posicion):
-    tipo, valor = _identificador(tabla, fila, posicion)
-    return f"{tipo}:{valor}" if tipo != "numero_serial" else valor
+    return etiqueta_componente(tabla, fila, posicion)
 
 
 def _actualizar_fila(cur, tabla, fila_id, anterior, datos, *, forzar=()):
@@ -135,6 +135,7 @@ def _eliminar_componente(cur, tabla, fila_id, padre_id):
     if tabla in ESTRUCTURALES:
         raise DatosIncompletos("Los puertos y slots estructurales conservan sus filas.")
     if tabla == "tarjeta_red":
+        cerrar_alertas_tarjeta(cur, padre_id, fila_id)
         cur.execute("DELETE FROM puerto_tarjeta_red WHERE tarjeta_red_id=%s", (fila_id,))
     relacion = RELACION.get(tabla, "activo_id")
     cur.execute(f"DELETE FROM {tabla} WHERE id=%s AND {relacion}=%s", (fila_id, padre_id))
@@ -191,18 +192,18 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lec
             modificados = _actualizar_fila(cur, tabla, id_fila, anterior, datos)
             cambios += bool(modificados)
             if "estado" in modificados:
-                _evento(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion),
+                _evento(cur, activo_id, tabla, _etiqueta(tabla, {**nueva, "tarjeta_red_id": padre_id}, posicion),
                         nueva["estado"], anterior.get("estado"), fecha)
                 eventos += 1
         else:
             id_fila = _insertar(cur, tabla, {**datos, relacion: padre_id})
             cambios += 1
             if tabla not in ESTRUCTURALES:
-                _evento_presencia(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion),
+                _evento_presencia(cur, activo_id, tabla, _etiqueta(tabla, {**nueva, "tarjeta_red_id": padre_id}, posicion),
                                   "Agregado", fecha)
                 eventos += 1
             if datos.get("estado") is not None:
-                _evento(cur, activo_id, tabla, _etiqueta(tabla, nueva, posicion), datos["estado"], None, fecha)
+                _evento(cur, activo_id, tabla, _etiqueta(tabla, {**nueva, "tarjeta_red_id": padre_id}, posicion), datos["estado"], None, fecha)
                 eventos += 1
         if tabla == "tarjeta_red":
             c, e = _reconciliar(cur, activo_id, "puerto_tarjeta_red", id_fila, puertos, fecha,
@@ -315,8 +316,9 @@ def registrar_fallo(config, referencia, tipo):
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Sin conexión", f"Falló la consulta SNMP ({tipo})", fecha)
             eventos += 1
+        alertas = evaluar_alertas(db, referencia.activo_id, fecha=fecha, fallo_snmp=True)
         # Perder SNMP conserva el último estado operativo y la fecha de sus datos.
-    return {"conexion_id": referencia.id, "ok": False, "eventos": eventos}
+    return {"conexion_id": referencia.id, "ok": False, "eventos": eventos, "alertas": alertas}
 
 
 def guardar_iteracion(config, referencia, ficha):
@@ -390,13 +392,14 @@ def guardar_iteracion(config, referencia, ficha):
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Activo", "Conexión SNMP restablecida", fecha)
             eventos += 1
+        alertas = evaluar_alertas(db, referencia.activo_id, fecha=fecha, lectura_snmp=True, tablas_omitidas=tablas_omitidas)
     if contadores:
         CONTADORES_LECTURA[referencia.activo_id] = contadores
     else:
         CONTADORES_LECTURA.pop(referencia.activo_id, None)
     return {"conexion_id": referencia.id, "activo_id": referencia.activo_id, "ok": True,
             "cambios": cambios, "eventos": eventos, "metricas": len(metricas),
-            "tablas_omitidas": tablas_omitidas}
+            "tablas_omitidas": tablas_omitidas, "alertas": alertas}
 
 
 async def ejecutar_iteracion(config, conexion_id):

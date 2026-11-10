@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from time import monotonic
+from etl.alertas import revisar_alertas
 
 from etl.config import cargar_configuracion
 from etl.db import conexion_bd, obtener_conexion
@@ -14,6 +16,8 @@ LOG = logging.getLogger(__name__)
 TICK_SEGUNDOS = 2
 LOCK_ID = 68342117
 CANAL_ACTUALIZACION = "etl_actualizar_conexion"
+CANAL_ALERTAS = "etl_revaluar_alertas"
+REVISION_ALERTAS_SEGUNDOS = 60
 
 
 def conexiones_programadas(config, conexion_id=None):
@@ -21,6 +25,7 @@ def conexiones_programadas(config, conexion_id=None):
         cur.execute("""SELECT m.id, m.frecuencia_actualizacion, a.ultima_actualizacion
             FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
             WHERE a.estado_operativo <> 'Baja'
+              AND NOT a.mantenimiento_activo
               AND m.estado_conexion IN ('Activo', 'Sin conexión')
               AND m.frecuencia_actualizacion > 0 AND (%s IS NULL OR m.id=%s)
             ORDER BY m.id""", (conexion_id, conexion_id))
@@ -49,6 +54,21 @@ def solicitudes_inmediatas(guardia):
     return solicitudes
 
 
+def solicitudes_alertas(guardia):
+    guardia.poll()
+    pendientes, conservados = set(), []
+    for aviso in guardia.notifies:
+        if aviso.channel == CANAL_ALERTAS:
+            if aviso.payload == "todos":
+                pendientes.add(None)
+            elif aviso.payload.isascii() and aviso.payload.isdigit() and 0 < len(aviso.payload) <= 19 and int(aviso.payload) > 0:
+                pendientes.add(int(aviso.payload))
+        else:
+            conservados.append(aviso)
+    guardia.notifies[:] = conservados
+    return pendientes
+
+
 def conexiones_vencidas(filas, intentos, ahora, solicitudes=()):
     solicitudes = set(solicitudes)
     return [i for i, frecuencia, ultima in filas if i in solicitudes or
@@ -75,6 +95,7 @@ async def iniciar_programador(config, *, una_vez=False, conexion_id=None):
     if una_vez:
         ids = [fila[0] for fila in conexiones_programadas(config, conexion_id)]
         await _ejecutar(config, ids)
+        revisar_alertas(config)
         return
     guardia = obtener_conexion(config)
     try:
@@ -85,13 +106,16 @@ async def iniciar_programador(config, *, una_vez=False, conexion_id=None):
             if not cur.fetchone()[0]:
                 raise RuntimeError("Ya hay un programador ETL en ejecución.")
             cur.execute("LISTEN etl_actualizar_conexion")
+            cur.execute("LISTEN etl_revaluar_alertas")
         intentos = {}
         arranque = True
+        ultima_revision = None
         while True:
             ahora = datetime.now(timezone.utc).replace(tzinfo=None)
             filas = conexiones_programadas(config, conexion_id)
             vigentes = {fila[0] for fila in filas}
             intentos = {i: fecha for i, fecha in intentos.items() if i in vigentes}
+            revaluar = solicitudes_alertas(guardia)
             solicitudes = solicitudes_inmediatas(guardia)
             if arranque:
                 # Recupera también los avisos emitidos mientras el programador estaba detenido.
@@ -101,6 +125,14 @@ async def iniciar_programador(config, *, una_vez=False, conexion_id=None):
             if vencidas:
                 await _ejecutar(config, vencidas)
                 intentos.update({i: datetime.now(timezone.utc).replace(tzinfo=None) for i in vencidas})
+            completa = ultima_revision is None or monotonic() - ultima_revision >= REVISION_ALERTAS_SEGUNDOS or None in revaluar
+            if revaluar or completa:
+                try:
+                    revisar_alertas(config, None if completa else sorted(revaluar))
+                    if completa:
+                        ultima_revision = monotonic()
+                except Exception:
+                    LOG.error("No se completo la reevaluacion de alertas; se reintentara")
             await asyncio.sleep(TICK_SEGUNDOS)
     finally:
         guardia.close()

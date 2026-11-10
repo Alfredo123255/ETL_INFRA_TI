@@ -57,7 +57,7 @@ def test_cambio_de_estado_registra_un_evento_y_no_lo_duplica(
     assert len(eventos) == 1
     activo_id, campo, estado, descripcion, fecha, tipo, etiqueta = eventos[0]
     assert (activo_id, campo, estado, fecha, tipo) == (19, "estado", nuevo, FECHA, tabla)
-    assert etiqueta == (str(valor) if identificador == "numero_serial"
+    assert etiqueta == (f"tarjeta:19/{identificador}:{valor}" if tabla == "puerto_tarjeta_red" else str(valor) if identificador == "numero_serial"
                         else f"{identificador}:{valor}")
     assert f"{anterior} → {nuevo}" in descripcion
 
@@ -167,7 +167,7 @@ def test_puerto_de_tarjeta_registra_su_propio_evento(monkeypatch):
 
     assert monitoreo._reconciliar(None, 19, "tarjeta_red", 19, [nueva], FECHA) == (1, 1)
     assert [(e[1], e[2], e[5], e[6]) for e in eventos] == [
-        ("estado", "Apagado", "puerto_tarjeta_red", "numero_puerto:1")]
+        ("estado", "Apagado", "puerto_tarjeta_red", "tarjeta:4/numero_puerto:1")]
 
 
 def test_evento_de_componente_guarda_tipo_identificador_y_fecha(monkeypatch):

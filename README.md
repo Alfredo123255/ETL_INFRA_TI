@@ -84,19 +84,18 @@ Cada bloque de arranque se ejecuta en una terminal distinta.
    .\mvnw.cmd spring-boot:run '-Dspring-boot.run.arguments=--server.port=8080'
    ```
 
-   Comprueba `http://127.0.0.1:8080/api/servidores`. Este backend usa todavía
-   los repositorios Excel de su proyecto; arrancarlo no hace que muestre los
-   activos que el ETL acaba de guardar en PostgreSQL.
+   Comprueba `http://127.0.0.1:8080/api/servidores`. El backend consulta PostgreSQL;
+   debe apuntar a la misma base local configurada en el ETL.
 
 5. **Opcional: iniciar el frontend**, en otra terminal:
 
    ```powershell
    cd C:\INGESOFT\Frontend-SI-INFRA-TI\Frontend-SI-INFRA-TI
    npm install
-   npm run dev -- --host 127.0.0.1 --port 4200
+   npm run dev -- --host 127.0.0.1 --port 5173
    ```
 
-   Abre `http://127.0.0.1:4200/`. Si las dependencias ya están instaladas,
+   Abre `http://127.0.0.1:5173/`. Si las dependencias ya están instaladas,
    omite `npm install`.
 
 En esta computadora también existe
@@ -706,3 +705,49 @@ La validación funcional, que solo consulta SNMP y no escribe en PostgreSQL, es:
 
 Exige los nombres aplicables a cada tipo, revisa valores/unidades e identificación
 de puertos y genera evidencia JSON y Markdown. La BD mantiene su esquema actual.
+
+
+## Alertas persistentes e historial de eventos
+
+La tabla `alerta` se incluye en `schema.sql`. En instalaciones anteriores que aun
+no la tengan, aplicar una sola vez `migrations/005_alerta.sql`. La configuracion de
+limites utiliza `umbral` (migracion 003). No se crea ni altera el esquema al iniciar.
+
+`etl/alertas.py` evalua por activo, componente y condicion. La carga inicial y cada
+lectura exitosa guardan las alertas junto con los datos y los eventos del mismo
+ciclo, en una transaccion. Un problema que continua conserva su identificador y
+fecha de inicio; una transicion de severidad registra el cambio en el historial.
+La recuperacion confirmada completa `fecha_resolucion` y conserva el episodio.
+Si reaparece, se abre otro episodio. El indice parcial impide dos alertas abiertas
+para la misma condicion, incluso si los campos de componente son NULL.
+
+Si falla SNMP se registra la desconexion, se conservan el estado operativo, la
+fecha de ultima actualizacion exitosa y las alertas previas. Estas no se cierran
+por falta de lecturas. Los retiros confirmados conservan su evento de presencia;
+los puertos de una NIC retirada dejan de tener una condicion pendiente propia.
+Mantenimiento y Baja se excluyen de las listas sin inventar una recuperacion.
+
+El programador revisa el calendario de EOS en hora de Lima y la configuracion de
+umbrales al arrancar y cada 60 segundos. El backend tambien envia un aviso al
+canal PostgreSQL `etl_revaluar_alertas` despues de cambiar umbrales, EOS o el ciclo
+de vida del activo; se entrega al commit y se procesa en el siguiente tick. Esta
+reevaluacion usa los datos validos existentes: no consulta SNMP, no inserta nuevas
+metricas y no cambia `activo.ultima_actualizacion`.
+
+El backend expone `GET /api/alertas`, que solo lee la tabla y devuelve todas las
+condiciones pendientes, ordenadas por severidad y luego por fecha de inicio.
+Admite filtros opcionales `activoId`, `severidad` (Media o Critica con tilde) y
+`categoria` (eventos, metricas, eos). Consultarlo no genera eventos ni modifica
+alertas. El programador debe estar encendido para que se actualicen.
+
+En el frontend, Insights > Alertas muestra las pestanas Alertas actuales y Fin de
+soporte, filtros, contadores y exportacion Excel de la lista visible. Inicio y las
+vistas consolidadas conservan sus datos de maqueta hasta su integracion respectiva.
+
+## Usuarios y roles del sistema web
+
+`migrations/004_usuarios_roles.sql` crea las tablas `rol` y `usuario` para la autenticación del backend Java. Ejecuta esta migración sobre la misma base configurada en Java; para una instalación nueva, `schema.sql` ya incluye estas tablas al final. El archivo `004_indice_metrica_activo_nombre_fecha.sql` es una migración distinta y se conserva; ambas se aplican manualmente por nombre de archivo.
+
+Se crean los roles Administrador (nueve permisos), Operador (todos excepto configurar umbrales y administrar usuarios) y Consulta (ver inventario y exportar). No se insertan usuarios, contraseñas ni hashes. Al repetir la migración no se sobrescriben los permisos ya configurados en los roles.
+
+El primer usuario se crea desde Java, únicamente si no existe ningún usuario y están definidas `ADMIN_CORREO`, `ADMIN_NOMBRE` y `ADMIN_CONTRASENA` en su entorno privado. Consulta el README de `Backend-SI-INFRA-TI/backend-infra-ti` para el procedimiento. El ETL no autentica usuarios web ni requiere estas variables: conserva su acceso PostgreSQL, las credenciales SNMP y la llave de integración con FastAPI independientes de la sesión del frontend.

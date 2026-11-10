@@ -70,6 +70,7 @@ def test_fallo_conserva_estado_y_fechas_y_registra_una_sola_transicion(estado):
     finally:
         if activo_id is not None:
             with psycopg2.connect(url) as db, db.cursor() as cur:
+                cur.execute("DELETE FROM alerta WHERE activo_id=%s", (activo_id,))
                 cur.execute("DELETE FROM historico_estado WHERE activo_id=%s", (activo_id,))
                 if conexion_id is not None:
                     cur.execute("DELETE FROM monitoreo_snmp WHERE id=%s", (conexion_id,))

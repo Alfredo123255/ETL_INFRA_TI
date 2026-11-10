@@ -50,3 +50,13 @@ async def test_arranque_recupera_avisos_perdidos_sin_duplicar_en_el_siguiente_ti
         await programador.iniciar_programador(None)
     assert ciclos == [[12]]
     guardia.close.assert_called_once()
+
+
+def test_aviso_de_umbrales_no_consume_solicitudes_de_lectura_snmp():
+    guardia=SimpleNamespace(poll=Mock(),notifies=[
+        SimpleNamespace(channel=programador.CANAL_ALERTAS,payload="todos"),
+        SimpleNamespace(channel=programador.CANAL_ALERTAS,payload="12"),
+        SimpleNamespace(channel=programador.CANAL_ALERTAS,payload="-1"),
+        SimpleNamespace(channel=CANAL_ACTUALIZACION,payload="34")])
+    assert programador.solicitudes_alertas(guardia)=={None,12}
+    assert solicitudes_inmediatas(guardia)=={34}
