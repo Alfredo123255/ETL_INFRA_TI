@@ -1,4 +1,4 @@
-"""Genera cuatro agentes Huawei SNMPv3 a partir de los MIB locales.
+"""Genera los perfiles Huawei SNMPv3 de laboratorio a partir de los MIB locales.
 
 Los valores son datos de laboratorio. Los OID se resuelven desde los MIB, no
 se asignan números arbitrarios a atributos del fabricante.
@@ -214,7 +214,7 @@ def ibmc(data, mib, hostname, serial, model, slot=None, *, instancia=None,
                       ("eth2", f"02:48:57:10:{mac_instancia:02x}:02", 10000000000)])
 
 
-def e9000(data, mib, *, instancia=1, serie_blade="HWCH121V5001"):
+def e9000(data, mib, *, instancia=1, serie_blade="HWCH121V5001", series_blades=None):
     hostname = f"huawei-e9000-{instancia:02d}"
     serie = f"HWE9000LAB{instancia:03d}"
     system(data, hostname, "Huawei E9000 Blade Server Chassis MM910",
@@ -232,15 +232,17 @@ def e9000(data, mib, *, instancia=1, serie_blade="HWCH121V5001"):
         ("shelfType", "4", "E9000"),
     ]:
         vendor(data, mib, symbol, value, tag, 1)
-    for blade in (1, 2):
+    presentes = series_blades or {1: serie_blade}
+    for blade in range(1, max(2, max(presentes)) + 1):
         for symbol, tag, value in [
-            (f"b{blade}Presence", "2", 1 if blade == 1 else 0),
-            (f"b{blade}PowerState", "4", "poweron" if blade == 1 else "poweroff"),
+            (f"b{blade}Presence", "2", 1 if blade in presentes else 0),
+            (f"b{blade}PowerState", "4", "poweron" if blade in presentes else "poweroff"),
             (f"b{blade}Health", "2", 0),
         ]:
             vendor(data, mib, symbol, value, tag)
-    vendor(data, mib, "b1ProductName", "CH121 V5")
-    vendor(data, mib, "b1fruProductSerialNumber", serie_blade, index=1)
+    for bahia, serie in presentes.items():
+        vendor(data, mib, f"b{bahia}ProductName", "CH121 V5")
+        vendor(data, mib, f"b{bahia}fruProductSerialNumber", serie, index=1)
     for index in (1, 2):
         for symbol, tag, value in [
             ("mPsuIndex", "2", index), ("mPsuLocation", "2", index),
@@ -403,7 +405,8 @@ def main():
         "huawei-2288h-v5-01", "huawei-2288h-v5-02",
         "huawei-ch121-v5-01", "huawei-ch121-v5-02",
         "huawei-e9000-01", "huawei-e9000-02",
-        "huawei-dorado-01", "huawei-dorado-02"))
+        "huawei-dorado-01", "huawei-dorado-02",
+        "huawei-e9000-03", "huawei-ch121-v5-03", "huawei-ch121-v5-04"))
     args = parser.parse_args()
     ibmc_file = "HUAWEI-SERVER-iBMC-MIB.mib"
     rack = from_zip("*V502.zip", ibmc_file, {"huawei": ENTERPRISES + ".2011"})
@@ -427,6 +430,14 @@ def main():
         ("huawei-dorado-01", lambda d: dorado(d, svc, hw, space, perf)),
         ("huawei-dorado-02", lambda d: dorado(d, svc, hw, space, perf, instancia=2)),
     ]
+    profiles.extend([
+        ("huawei-e9000-03", lambda d: e9000(d, chassis, instancia=3,
+            series_blades={1: "HWCH121V5003", 2: "HWCH121V5004"})),
+        ("huawei-ch121-v5-03", lambda d: ibmc(d, blade, "huawei-ch121-v5-03", "HWCH121V5003", "CH121 V5", 1,
+            instancia=4, serie_chasis="HWE9000LAB003", ubicacion="DC-LAB-LOCAL / E9000-03 Bay 1")),
+        ("huawei-ch121-v5-04", lambda d: ibmc(d, blade, "huawei-ch121-v5-04", "HWCH121V5004", "CH121 V5", 2,
+            instancia=5, serie_chasis="HWE9000LAB003", ubicacion="DC-LAB-LOCAL / E9000-03 Bay 2")),
+    ])
     for name, fill in profiles:
         if args.solo and name not in args.solo:
             continue

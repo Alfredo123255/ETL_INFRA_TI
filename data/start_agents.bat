@@ -86,4 +86,44 @@ start "huawei-dorado-02 (127.0.0.47:17700)" cmd /c "python "%REPO_ROOT%\data\run
 echo Iniciando hpe-dl380-02 en 127.0.0.17:17800 ...
 start "hpe-dl380-02 (127.0.0.17:17800)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=8000000001444c3338303032 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.17:17800 --data-dir="%REPO_ROOT%\data\hpe-dl380-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-dl380-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
 
+echo Iniciando aruba-cx-sw02 en 127.0.0.21:17900 ...
+start "aruba-cx-sw02 (127.0.0.21:17900)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=800000000161727562612d63782d73773032 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.21:17900 --data-dir="%REPO_ROOT%\data\aruba-cx-sw02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [aruba-cx-sw02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando aruba-cx-sw03 en 127.0.0.22:18000 ...
+start "aruba-cx-sw03 (127.0.0.22:18000)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=800000000161727562612d63782d73773033 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.22:18000 --data-dir="%REPO_ROOT%\data\aruba-cx-sw03" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [aruba-cx-sw03 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando aruba-cx-sw04 en 127.0.0.23:18100 ...
+start "aruba-cx-sw04 (127.0.0.23:18100)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=800000000161727562612d63782d73773034 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.23:18100 --data-dir="%REPO_ROOT%\data\aruba-cx-sw04" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [aruba-cx-sw04 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando aruba-cx-sw05 en 127.0.0.24:18200 ...
+start "aruba-cx-sw05 (127.0.0.24:18200)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=800000000161727562612d63782d73773035 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.24:18200 --data-dir="%REPO_ROOT%\data\aruba-cx-sw05" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [aruba-cx-sw05 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando hpe-c7000-02 en 127.0.0.18:18300 ...
+start "hpe-c7000-02 (127.0.0.18:18300)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016870652d63373030302d3032 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.18:18300 --data-dir="%REPO_ROOT%\data\hpe-c7000-02" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-c7000-02 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando hpe-bl460c-04 en 127.0.0.19:18400 ...
+start "hpe-bl460c-04 (127.0.0.19:18400)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016870652d626c343630632d3034 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.19:18400 --data-dir="%REPO_ROOT%\data\hpe-bl460c-04" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-bl460c-04 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando hpe-bl460c-05 en 127.0.0.25:18500 ...
+start "hpe-bl460c-05 (127.0.0.25:18500)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016870652d626c343630632d3035 --v3-user=HPE --v3-auth-key=Enterprise --v3-auth-proto=SHA --v3-priv-key=Enterprise --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.25:18500 --data-dir="%REPO_ROOT%\data\hpe-bl460c-05" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [hpe-bl460c-05 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-e9000-03 en 127.0.0.48:18600 ...
+start "huawei-e9000-03 (127.0.0.48:18600)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016875617765692d65393030302d3033 --v3-user=Administrator --v3-auth-key=Admin@9000 --v3-auth-proto=SHA --v3-priv-key=Admin@9000 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.48:18600 --data-dir="%REPO_ROOT%\data\huawei-e9000-03" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-e9000-03 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-ch121-v5-03 en 127.0.0.49:18700 ...
+start "huawei-ch121-v5-03 (127.0.0.49:18700)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016875617765692d63683132312d76352d3033 --v3-user=Administrator --v3-auth-key=Admin@9000 --v3-auth-proto=SHA --v3-priv-key=Admin@9000 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.49:18700 --data-dir="%REPO_ROOT%\data\huawei-ch121-v5-03" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-ch121-v5-03 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
+echo Iniciando huawei-ch121-v5-04 en 127.0.0.50:18800 ...
+start "huawei-ch121-v5-04 (127.0.0.50:18800)" cmd /c "python "%REPO_ROOT%\data\run_responder.py" --v3-engine-id=80000000016875617765692d63683132312d76352d3034 --v3-user=Administrator --v3-auth-key=Admin@9000 --v3-auth-proto=SHA --v3-priv-key=Admin@9000 --v3-priv-proto=AES --agent-udpv4-endpoint=127.0.0.50:18800 --data-dir="%REPO_ROOT%\data\huawei-ch121-v5-04" --cache-dir="%REPO_ROOT%\logs\snmpsim-cache" & echo. & echo [huawei-ch121-v5-04 termino. Presione una tecla para cerrar esta ventana] & pause >nul"
+timeout /t 2 /nobreak >nul
+
 endlocal

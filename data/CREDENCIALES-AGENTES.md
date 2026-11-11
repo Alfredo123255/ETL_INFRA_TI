@@ -24,6 +24,16 @@ Todos usan **SNMPv3**, autenticación **SHA**, privacidad **AES** y contexto SNM
 | `huawei-ch121-v5-02` | Blade Huawei | `127.0.0.45:17500` | `Administrator` | `Admin@9000` | `Admin@9000` |
 | `huawei-e9000-02` | Chasis Huawei | `127.0.0.46:17600` | `Administrator` | `Admin@9000` | `Admin@9000` |
 | `huawei-dorado-02` | Storage Huawei | `127.0.0.47:17700` | `Administrator` | `Admin@9000` | `Admin@9000` |
+| `aruba-cx-sw02` | Switch Aruba | `127.0.0.21:17900` | `HPE` | `Enterprise` | `Enterprise` |
+| `aruba-cx-sw03` | Switch Aruba | `127.0.0.22:18000` | `HPE` | `Enterprise` | `Enterprise` |
+| `aruba-cx-sw04` | Switch Aruba | `127.0.0.23:18100` | `HPE` | `Enterprise` | `Enterprise` |
+| `aruba-cx-sw05` | Switch Aruba | `127.0.0.24:18200` | `HPE` | `Enterprise` | `Enterprise` |
+| `hpe-c7000-02` | Chasis HPE | `127.0.0.18:18300` | `HPE` | `Enterprise` | `Enterprise` |
+| `hpe-bl460c-04` | Blade HPE | `127.0.0.19:18400` | `HPE` | `Enterprise` | `Enterprise` |
+| `hpe-bl460c-05` | Blade HPE | `127.0.0.25:18500` | `HPE` | `Enterprise` | `Enterprise` |
+| `huawei-e9000-03` | Chasis Huawei | `127.0.0.48:18600` | `Administrator` | `Admin@9000` | `Admin@9000` |
+| `huawei-ch121-v5-03` | Blade Huawei | `127.0.0.49:18700` | `Administrator` | `Admin@9000` | `Admin@9000` |
+| `huawei-ch121-v5-04` | Blade Huawei | `127.0.0.50:18800` | `Administrator` | `Admin@9000` | `Admin@9000` |
 
 ## Uso desde el frontend
 
@@ -58,3 +68,9 @@ la ruta; copiar .env no traslada automáticamente el archivo de llave. La guía
 privada y la llave no se incluyen en Git ni en las imágenes Docker.
 
 Más detalles: `CIFRADO_SNMP.md` del backend y la sección de cifrado del README del ETL.
+
+## Chasis ampliados y blades
+
+- `hpe-c7000-02`: slots 1 y 2 con `hpe-bl460c-04` y `hpe-bl460c-05`.
+- `huawei-e9000-03`: slots 1 y 2 con `huawei-ch121-v5-03` y `huawei-ch121-v5-04`.
+- Los 18 agentes anteriores se conservan. Total: 28 agentes, con 5 switches y 5 chasis.

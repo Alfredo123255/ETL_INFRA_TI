@@ -27,6 +27,7 @@ COLUMNAS = {
 # Vocabulario de historico_estado.campo: "estado_operativo", "estado_conexion",
 # "estado" y "presencia" de componentes, y "lectura_componentes" (marca de lectura vacía o recuperada).
 # Las retiradas eliminan filas y registran presencia=Retirado; Baja sigue reservada a activos.
+# cierre_alerta_<campo> documenta el cierre administrativo; no es un estado físico del componente.
 CAMPO_ESTADO_OPERATIVO = "estado_operativo"
 CAMPO_ESTADO_CONEXION = "estado_conexion"
 CAMPO_PRESENCIA = "presencia"

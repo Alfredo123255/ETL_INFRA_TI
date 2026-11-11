@@ -725,7 +725,25 @@ Si falla SNMP se registra la desconexion, se conservan el estado operativo, la
 fecha de ultima actualizacion exitosa y las alertas previas. Estas no se cierran
 por falta de lecturas. Los retiros confirmados conservan su evento de presencia;
 los puertos de una NIC retirada dejan de tener una condicion pendiente propia.
-Mantenimiento y Baja se excluyen de las listas sin inventar una recuperacion.
+Al iniciar mantenimiento o dar de baja, Java cierra administrativamente todas las
+alertas abiertas en la misma transaccion de la accion. Conserva su descripcion
+y agrega "Cerrada por inicio de mantenimiento" o "Cerrada por baja del activo".
+No cambia la ultima verificacion SNMP ni la ultima actualizacion del activo.
+Cada cierre se registra en historico_estado con campo `cierre_alerta_<campo>` y
+valor "Cerrada por mantenimiento" o "Cerrada por baja", sin simular Normal ni
+Encendido. El historial web lo presenta como "Cierre de alerta" / "Cerrada".
+
+Al finalizar mantenimiento se solicita una lectura inmediata, sin cambiar la
+frecuencia configurada. Las alertas basadas en SNMP solo se vuelven a evaluar
+cuando existe una lectura exitosa posterior al fin del mantenimiento; un fallo
+nuevo puede generar su propia alerta de conexion. Si persiste la condicion, se
+abre otro episodio con nuevo id y fecha de inicio, y se registra nuevamente en
+el historial. EOS conserva su evaluacion independiente por calendario.
+
+El ETL tambien cierra episodios heredados que sigan abiertos en equipos en
+mantenimiento o Baja. Usa la fecha del inicio administrativo registrada en el
+historial; si no existe, usa la fecha de evaluacion. Los cierres son idempotentes
+y no se marcan como recuperaciones. No se modifica el esquema de la BD.
 
 El programador revisa el calendario de EOS en hora de Lima y la configuracion de
 umbrales al arrancar y cada 60 segundos. El backend tambien envia un aviso al

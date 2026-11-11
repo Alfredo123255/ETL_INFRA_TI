@@ -1,7 +1,7 @@
 """CP-116 a CP-120 y regresiones del ciclo: PostgreSQL test, transacciones revertidas."""
 import copy
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import os
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -36,6 +36,7 @@ def entorno(monkeypatch):
             with db.cursor() as c:
                 c.execute("RELEASE SAVEPOINT ciclo_alertas")
     monkeypatch.setattr(monitoreo, "conexion_bd", conexion)
+    monkeypatch.setattr("etl.alertas.conexion_bd", conexion)
     monkeypatch.setattr(monitoreo, "CONTADORES_LECTURA", {})
     config = Configuracion(SecretStr("test"), database_url=SecretStr(url))
     class Entorno:
@@ -65,6 +66,7 @@ def entorno(monkeypatch):
         def evaluar(self,id,**kwargs):return evaluar_alertas(db,id,**kwargs)
         def fallo(self,ref):return monitoreo.registrar_fallo(config,ref,"timeout")
     e=Entorno()
+    e.config=config
     e.sql("UPDATE umbral SET advertencia=NULL,critico=NULL WHERE nombre<>'dias_para_eos'")
     e.sql("UPDATE umbral SET advertencia=75,critico=85 WHERE nombre='equipo_temperatura_c'")
     e.sql("UPDATE umbral SET advertencia=30,critico=NULL WHERE nombre='dias_para_eos'")
@@ -137,13 +139,33 @@ def test_fallo_conserva_alertas_previas_sin_revalidar_datos_antiguos(entorno):
 
 
 @pytest.mark.parametrize("condicion",["mantenimiento","baja"])
-def test_cp118_excluye_sin_generar_falsa_recuperacion(entorno,condicion):
+def test_cp118_cierra_administrativamente_sin_falsa_recuperacion(entorno,condicion):
     r,f=entorno.crear()
     entorno.sql("UPDATE activo SET fecha_eos=%s WHERE id=%s",(date(2020,1,1),r.activo_id))
-    if condicion=="mantenimiento":entorno.sql("UPDATE activo SET mantenimiento_activo=true WHERE id=%s",(r.activo_id,))
-    else:entorno.sql("UPDATE activo SET estado_operativo='Baja' WHERE id=%s",(r.activo_id,))
-    entorno.evaluar(r.activo_id,lectura_snmp=True)
+    entorno.ciclo(r,f,85,{"disco":[{"numero_serial":"D-MANT","estado":"Degradado"}]},estado="Degradado")
+    abiertas=entorno.abiertas(r.activo_id)
+    assert len(abiertas)==4
+    ultima=entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]
+    inicio=max(x[5] for x in abiertas)+timedelta(seconds=1)
+    if condicion=="mantenimiento":
+        entorno.sql("UPDATE activo SET mantenimiento_activo=true WHERE id=%s",(r.activo_id,))
+        campo,valor='mantenimiento_activo','true'
+    else:
+        entorno.sql("UPDATE activo SET estado_operativo='Baja' WHERE id=%s",(r.activo_id,))
+        campo,valor='estado_operativo','Baja'
+    entorno.sql("INSERT INTO historico_estado(activo_id,campo,valor_nuevo,descripcion,fecha_cambio) VALUES (%s,%s,%s,'Acción administrativa',%s)",(r.activo_id,campo,valor,inicio))
+    result=entorno.evaluar(r.activo_id,fecha=inicio+timedelta(days=2),lectura_snmp=True)
+    assert result['cerradas_administrativamente']==4 and result['resueltas']==0
     assert entorno.abiertas(r.activo_id)==[]
+    cerradas=entorno.sql("SELECT id,descripcion,fecha_resolucion,ultima_verificacion FROM alerta WHERE activo_id=%s ORDER BY id",(r.activo_id,))
+    for cerrada,anterior in zip(cerradas,abiertas):
+        assert cerrada[0]==anterior[4] and cerrada[2]==inicio and cerrada[3]==anterior[6]
+        assert ('Cerrada por inicio de mantenimiento' if condicion=='mantenimiento' else 'Cerrada por baja del activo') in cerrada[1]
+    assert entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]==ultima
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo LIKE 'cierre_alerta_%%'",(r.activo_id,))[0][0]==4
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND descripcion LIKE 'Condición recuperada%%'",(r.activo_id,))[0][0]==0
+    entorno.evaluar(r.activo_id)
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo LIKE 'cierre_alerta_%%'",(r.activo_id,))[0][0]==4
 
 
 @pytest.mark.parametrize("dias,severidad",[(31,None),(30,"Media"),(0,"Media"),(-1,"Crítica")])
@@ -226,3 +248,71 @@ def test_dos_evaluadores_concurrentes_no_duplican_alerta_ni_evento():
                 for tabla in ('alerta','historico_estado','metrica_historica','disco','monitoreo_snmp'):
                     c.execute(f"DELETE FROM {tabla} WHERE activo_id=%s",(activo,))
                 c.execute("DELETE FROM servidor WHERE id=%s",(activo,));c.execute("DELETE FROM activo WHERE id=%s",(activo,));c.execute("DELETE FROM datacenters WHERE nombre=%s",(nombre,))
+
+
+def _pausar_y_finalizar(entorno, ref):
+    """Precondiciones administrativas; el evaluador debe cerrar y separar episodios."""
+    entorno.sql("UPDATE activo SET mantenimiento_activo=true WHERE id=%s", (ref.activo_id,))
+    entorno.sql("UPDATE monitoreo_snmp SET estado_conexion='Inactivo' WHERE activo_id=%s", (ref.activo_id,))
+    entorno.evaluar(ref.activo_id)
+    fin=datetime.now(timezone.utc).replace(tzinfo=None)
+    entorno.sql("UPDATE activo SET mantenimiento_activo=false WHERE id=%s", (ref.activo_id,))
+    entorno.sql("UPDATE monitoreo_snmp SET estado_conexion='Activo' WHERE activo_id=%s", (ref.activo_id,))
+    entorno.sql("INSERT INTO historico_estado(activo_id,campo,valor_nuevo,descripcion,fecha_cambio) VALUES (%s,'mantenimiento_activo','false','Mantenimiento finalizado',%s)", (ref.activo_id,fin))
+    return fin
+
+
+def test_cp118_reabre_otro_episodio_solo_despues_de_lectura_nueva(entorno):
+    r,f=entorno.crear()
+    piezas={"disco":[{"numero_serial":"D-MANT","estado":"Degradado"}]}
+    entorno.ciclo(r,f,85,piezas,estado="Degradado")
+    anteriores=entorno.abiertas(r.activo_id)
+    assert len(anteriores)==3
+    ultima=entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]
+    fin=_pausar_y_finalizar(entorno,r)
+    entorno.evaluar(r.activo_id)
+    entorno.evaluar(r.activo_id,lectura_snmp=True)
+    assert entorno.abiertas(r.activo_id)==[]
+    assert entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]==ultima
+    entorno.ciclo(r,f,85,piezas,estado="Degradado")
+    nuevas=entorno.abiertas(r.activo_id)
+    assert len(nuevas)==3
+    assert not {x[4] for x in anteriores}&{x[4] for x in nuevas}
+    assert all(x[5]>fin for x in nuevas)
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo='umbral_equipo_temperatura_c' AND valor_nuevo='Crítico'",(r.activo_id,))[0][0]==2
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND componente_tipo='disco' AND campo='estado' AND valor_nuevo='Degradado'",(r.activo_id,))[0][0]==2
+    entorno.ciclo(r,f,85,piezas,estado="Degradado")
+    assert {x[4] for x in entorno.abiertas(r.activo_id)}=={x[4] for x in nuevas}
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo='umbral_equipo_temperatura_c' AND valor_nuevo='Crítico'",(r.activo_id,))[0][0]==2
+
+
+def test_cp118_no_reabre_si_la_lectura_posterior_es_saludable(entorno):
+    r,f=entorno.crear()
+    entorno.ciclo(r,f,85,{"disco":[{"numero_serial":"D-MANT","estado":"Degradado"}]})
+    _pausar_y_finalizar(entorno,r)
+    entorno.ciclo(r,f,74,{"disco":[{"numero_serial":"D-MANT","estado":"Encendido"}]})
+    assert entorno.abiertas(r.activo_id)==[]
+    assert entorno.sql("SELECT count(*) FROM alerta WHERE activo_id=%s",(r.activo_id,))[0][0]==2
+
+
+def test_cp118_fallo_posterior_abre_conexion_sin_reutilizar_metricas(entorno):
+    r,f=entorno.crear();entorno.ciclo(r,f,85)
+    _pausar_y_finalizar(entorno,r)
+    entorno.sql("UPDATE monitoreo_snmp SET estado_conexion='Sin conexión' WHERE activo_id=%s",(r.activo_id,))
+    entorno.evaluar(r.activo_id)
+    assert entorno.abiertas(r.activo_id)==[]
+    ultima=entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]
+    entorno.fallo(r)
+    assert [x[2] for x in entorno.abiertas(r.activo_id)]==['estado_conexion']
+    assert entorno.sql("SELECT ultima_actualizacion FROM activo WHERE id=%s",(r.activo_id,))[0][0]==ultima
+
+
+@pytest.mark.parametrize("condicion",["mantenimiento","baja"])
+def test_revision_incluye_alertas_heredadas_de_equipos_excluidos(entorno,condicion):
+    from etl.alertas import revisar_alertas
+    r,f=entorno.crear();entorno.ciclo(r,f,85)
+    if condicion=='mantenimiento':entorno.sql("UPDATE activo SET mantenimiento_activo=true WHERE id=%s",(r.activo_id,))
+    else:entorno.sql("UPDATE activo SET estado_operativo='Baja' WHERE id=%s",(r.activo_id,))
+    revisar_alertas(entorno.config,[r.activo_id])
+    assert entorno.abiertas(r.activo_id)==[]
+    assert entorno.sql("SELECT count(*) FROM historico_estado WHERE activo_id=%s AND campo='cierre_alerta_umbral_equipo_temperatura_c'",(r.activo_id,))[0][0]==1

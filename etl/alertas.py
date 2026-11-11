@@ -22,12 +22,29 @@ def etiqueta_componente(tabla, fila, posicion):
 
 def _evento(cur, activo, clave, valor, descripcion, fecha):
     tipo, serial, campo = clave
-    cur.execute("""SELECT valor_nuevo FROM historico_estado WHERE activo_id=%s AND campo=%s
+    cur.execute("""SELECT campo,valor_nuevo FROM historico_estado WHERE activo_id=%s AND campo IN (%s,%s)
         AND componente_tipo IS NOT DISTINCT FROM %s AND componente_sn IS NOT DISTINCT FROM %s
-        ORDER BY fecha_cambio DESC,id DESC LIMIT 1""", (activo, campo, tipo, serial))
+        ORDER BY fecha_cambio DESC,id DESC LIMIT 1""", (activo, campo, "cierre_alerta_" + campo, tipo, serial))
     anterior = cur.fetchone()
-    if anterior is None or anterior["valor_nuevo"] != valor:
+    if anterior is None or anterior["campo"] != campo or anterior["valor_nuevo"] != valor:
         registrar_evento_estado(cur, activo, campo, valor, descripcion, fecha, tipo, serial)
+
+
+def cerrar_alertas_administrativamente(cur, activo_id, motivo, fecha):
+    """Cierre idempotente; conserva causa, última lectura y fecha del activo."""
+    descripcion = "Cerrada por baja del activo" if motivo == "baja" else "Cerrada por inicio de mantenimiento"
+    valor = "Cerrada por baja" if motivo == "baja" else "Cerrada por mantenimiento"
+    cur.execute("""UPDATE alerta SET fecha_resolucion=GREATEST(fecha_inicio,%s),
+        descripcion=descripcion || E'\\n' || %s
+        WHERE activo_id=%s AND fecha_resolucion IS NULL
+        RETURNING id,campo,componente_tipo,componente_sn,descripcion,fecha_resolucion""",
+        (fecha, descripcion, activo_id))
+    cerradas = cur.fetchall()
+    for alerta in cerradas:
+        registrar_evento_estado(cur, activo_id, "cierre_alerta_" + alerta["campo"], valor,
+            f"Alerta #{alerta['id']}. {alerta['descripcion']}", alerta["fecha_resolucion"],
+            alerta["componente_tipo"], alerta["componente_sn"])
+    return len(cerradas)
 
 
 def evaluar_alertas(db, activo_id, *, fecha=None, lectura_snmp=False, fallo_snmp=False,
@@ -41,15 +58,32 @@ def evaluar_alertas(db, activo_id, *, fecha=None, lectura_snmp=False, fallo_snmp
         conexion = conexiones[-1] if conexiones else None
         cur.execute("SELECT * FROM activo WHERE id=%s FOR UPDATE", (activo_id,))
         activo = cur.fetchone()
-        if not activo or activo["estado_operativo"] == "Baja" or activo["mantenimiento_activo"]:
+        if not activo:
             return {"creadas": 0, "resueltas": 0, "actualizadas": 0}
+        if activo["estado_operativo"] == "Baja" or activo["mantenimiento_activo"]:
+            motivo = "baja" if activo["estado_operativo"] == "Baja" else "mantenimiento"
+            campo, valor = ("estado_operativo", "Baja") if motivo == "baja" else ("mantenimiento_activo", "true")
+            # Repara episodios anteriores usando el inicio administrativo registrado.
+            cur.execute("""SELECT fecha_cambio FROM historico_estado WHERE activo_id=%s
+                AND campo=%s AND valor_nuevo=%s ORDER BY fecha_cambio DESC,id DESC LIMIT 1""",
+                (activo_id, campo, valor))
+            inicio = cur.fetchone()
+            cerradas = cerrar_alertas_administrativamente(cur, activo_id, motivo,
+                inicio["fecha_cambio"] if inicio else fecha)
+            return {"creadas": 0, "resueltas": 0, "actualizadas": 0, "cerradas_administrativamente": cerradas}
+        cur.execute("""SELECT max(fecha_cambio) AS limite FROM historico_estado WHERE activo_id=%s
+            AND ((campo='mantenimiento_activo' AND valor_nuevo='false')
+                OR (campo LIKE 'cierre_alerta_%%' AND valor_nuevo='Cerrada por mantenimiento'))""", (activo_id,))
+        fin_mantenimiento = cur.fetchone()["limite"]
+        lectura_posterior = fin_mantenimiento is None or (activo["ultima_actualizacion"] is not None
+            and activo["ultima_actualizacion"] > fin_mantenimiento)
         cur.execute("SELECT * FROM alerta WHERE activo_id=%s AND fecha_resolucion IS NULL FOR UPDATE", (activo_id,))
         abiertas = {(a["componente_tipo"], a["componente_sn"], a["campo"]): a for a in cur.fetchall()}
         condiciones = {}
         def poner(tipo, serial, campo, valor, severidad, descripcion, verificacion=fecha):
             condiciones[(tipo, serial, campo)] = (valor, severidad, descripcion, verificacion)
 
-        if conexion and conexion["estado_conexion"] == "Sin conexión" and (fallo_snmp or (None, None, "estado_conexion") not in abiertas):
+        if conexion and conexion["estado_conexion"] == "Sin conexión" and (fallo_snmp or (lectura_posterior and (None, None, "estado_conexion") not in abiertas)):
             poner(None, None, "estado_conexion", "Sin conexión", "Crítica", "Conexión SNMP: Sin conexión")
         elif conexion and conexion["estado_conexion"] == "Activo" and lectura_snmp:
             poner(None, None, "estado_conexion", "Activo", None, "Conexión SNMP restablecida")
@@ -75,7 +109,7 @@ def evaluar_alertas(db, activo_id, *, fecha=None, lectura_snmp=False, fallo_snmp
                     poner(*clave, "Sin umbral", None, "Umbral deshabilitado; condición retirada")
 
         vigente = conexion and conexion["estado_conexion"] == "Activo" and activo["ultima_actualizacion"] is not None
-        if not fallo_snmp and (lectura_snmp or vigente):
+        if not fallo_snmp and lectura_posterior and (lectura_snmp or vigente):
             comprobacion = activo["ultima_actualizacion"] or fecha
             estado = activo["estado_operativo"]
             poner(None, None, "estado_operativo", estado, "Crítica" if estado in ("Apagado", "Degradado") else None,
@@ -186,7 +220,10 @@ def cerrar_alertas_tarjeta(cur, activo_id, tarjeta_id):
 def revisar_alertas(config, ids=None):
     """Reevaluacion de calendario/configuracion. No escribe metricas ni fecha del activo."""
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("SELECT id FROM activo WHERE estado_operativo<>'Baja' AND NOT mantenimiento_activo AND (%s IS NULL OR id=ANY(%s)) ORDER BY id", (ids, ids))
+        cur.execute("""SELECT a.id FROM activo a WHERE (%s IS NULL OR a.id=ANY(%s))
+            AND ((a.estado_operativo<>'Baja' AND NOT a.mantenimiento_activo)
+                OR EXISTS (SELECT 1 FROM alerta al WHERE al.activo_id=a.id AND al.fecha_resolucion IS NULL))
+            ORDER BY a.id""", (ids, ids))
         activos = [r[0] for r in cur.fetchall()]
     for activo_id in activos:
         with conexion_bd(config) as db:
