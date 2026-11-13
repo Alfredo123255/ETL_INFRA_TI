@@ -208,6 +208,7 @@ texto arbitrario de excepciones de SNMP.
 | SNMP_CONTEXT_NAME | Vacío para equipos reales; usar public con los simuladores. |
 | SNMP_TIMEOUT | 3 segundos por intento. |
 | SNMP_RETRIES | 1 reintento; un timeout suele tardar más de 6 segundos en total. |
+| ETL_CONCURRENCIA | Máximo de extracciones simultáneas del programador. Por defecto 20; entero mínimo 1. Ajustar según CPU, memoria y conexiones disponibles en PostgreSQL. |
 | API_HOST | 127.0.0.1. |
 | API_PORT | 8001. |
 | API_DOCS | 0; 1 habilita /docs y /openapi.json. |
@@ -710,7 +711,7 @@ de puertos y genera evidencia JSON y Markdown. La BD mantiene su esquema actual.
 ## Alertas persistentes e historial de eventos
 
 La tabla `alerta` se incluye en `schema.sql`. En instalaciones anteriores que aun
-no la tengan, aplicar una sola vez `migrations/005_alerta.sql`. La configuracion de
+no la tengan, aplicar una sola vez `migrations/006_alerta.sql`. La configuracion de
 limites utiliza `umbral` (migracion 003). No se crea ni altera el esquema al iniciar.
 
 `etl/alertas.py` evalua por activo, componente y condicion. La carga inicial y cada
@@ -764,8 +765,13 @@ vistas consolidadas conservan sus datos de maqueta hasta su integracion respecti
 
 ## Usuarios y roles del sistema web
 
-`migrations/004_usuarios_roles.sql` crea las tablas `rol` y `usuario` para la autenticación del backend Java. Ejecuta esta migración sobre la misma base configurada en Java; para una instalación nueva, `schema.sql` ya incluye estas tablas al final. El archivo `004_indice_metrica_activo_nombre_fecha.sql` es una migración distinta y se conserva; ambas se aplican manualmente por nombre de archivo.
+`migrations/005_usuarios_roles.sql` crea las tablas `rol` y `usuario` para la autenticación del backend Java. Ejecuta esta migración sobre la misma base configurada en Java; para una instalación nueva, `schema.sql` ya incluye estas tablas al final. El orden es `004_indice_metrica_activo_nombre_fecha.sql`, `005_usuarios_roles.sql`, `006_alerta.sql` y `007_indices_componentes_activo.sql`. Los archivos de usuarios y alertas antes se llamaban `004_usuarios_roles.sql` y `005_alerta.sql`, respectivamente: si ya fueron aplicados, no deben ejecutarse otra vez por el cambio de nombre.
 
 Se crean los roles Administrador (nueve permisos), Operador (todos excepto configurar umbrales y administrar usuarios) y Consulta (ver inventario y exportar). No se insertan usuarios, contraseñas ni hashes. Al repetir la migración no se sobrescriben los permisos ya configurados en los roles.
 
 El primer usuario se crea desde Java, únicamente si no existe ningún usuario y están definidas `ADMIN_CORREO`, `ADMIN_NOMBRE` y `ADMIN_CONTRASENA` en su entorno privado. Consulta el README de `Backend-SI-INFRA-TI/backend-infra-ti` para el procedimiento. El ETL no autentica usuarios web ni requiere estas variables: conserva su acceso PostgreSQL, las credenciales SNMP y la llave de integración con FastAPI independientes de la sesión del frontend.
+
+## Pruebas de retiro de componentes simulados
+
+Para listar, retirar y restaurar piezas de una captura SNMP con respaldo, usa scripts/componentes_snmp.ps1. La guía y los ejemplos están en [scripts/README_componentes_snmp.md](scripts/README_componentes_snmp.md). Estas herramientas no acceden a la base de datos.
+

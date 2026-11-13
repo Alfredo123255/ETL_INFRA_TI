@@ -18,7 +18,7 @@ pytestmark = pytest.mark.integracion
 URL = os.environ.get("TEST_DATABASE_URL", "").strip()
 HEADERS = {"X-API-Key": "api-integracion"}
 PATH = "/api/etl/crear-activo"
-DATACENTER, CLUSTER = "DC-LAB-LOCAL", "CLUSTER-LAB-LOCAL"
+DATACENTER, CLUSTER = "DC-LIMA", "CLUSTER-LAB-LOCAL"
 # El chasis primero, para que los blades se enlacen a sus slots.
 ORDEN = ["hpe-c7000-01", "hpe-dl380-01", "hpe-dl360-01", "hpe-bl460c-01", "hpe-bl460c-02", "hpe-bl460c-03",
          "hpe-storage-fc-01", "hpe-storage-fc-02", "aruba-cx-sw01"]

@@ -24,12 +24,19 @@ class Configuracion:
     db_timeout: int = 5
     lecturas_vacias_para_baja: int = LECTURAS_VACIAS_PARA_BAJA
     credential_key: SecretStr | None = field(default=None, repr=False)
+    etl_concurrencia: int = 20
 
 def cargar_configuracion():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     key = os.getenv("ETL_API_KEY", "")
     if not key.strip():
         raise RuntimeError("ETL_API_KEY es obligatoria; la API no puede arrancar.")
+    try:
+        concurrencia = int(os.getenv("ETL_CONCURRENCIA", "20"))
+        if concurrencia < 1:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError("ETL_CONCURRENCIA debe ser un entero mayor o igual a 1.") from None
     try:
         timeout = float(os.getenv("SNMP_TIMEOUT", "3"))
         retries = int(os.getenv("SNMP_RETRIES", "1"))
@@ -46,4 +53,4 @@ def cargar_configuracion():
                          retries, os.getenv("API_HOST", "127.0.0.1"), port,
                          os.getenv("API_DOCS", "0") == "1", networks,
                          SecretStr(os.environ["DATABASE_URL"]) if os.getenv("DATABASE_URL", "").strip() else None,
-                         db_timeout, lecturas_vacias, cargar_llave())
+                         db_timeout, lecturas_vacias, cargar_llave(), etl_concurrencia=concurrencia)

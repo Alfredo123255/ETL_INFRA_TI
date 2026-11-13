@@ -20,3 +20,7 @@ snmp_credentials.backup.enc
 
 # Documentación privada de secretos
 CLAVES-DESPLIEGUE-PRIVADO.md
+
+# Respaldos locales de pruebas de componentes SNMP.
+data/.respaldos_componentes/
+logs/componentes_snmp/

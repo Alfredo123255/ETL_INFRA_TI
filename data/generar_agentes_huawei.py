@@ -434,9 +434,9 @@ def main():
         ("huawei-e9000-03", lambda d: e9000(d, chassis, instancia=3,
             series_blades={1: "HWCH121V5003", 2: "HWCH121V5004"})),
         ("huawei-ch121-v5-03", lambda d: ibmc(d, blade, "huawei-ch121-v5-03", "HWCH121V5003", "CH121 V5", 1,
-            instancia=4, serie_chasis="HWE9000LAB003", ubicacion="DC-LAB-LOCAL / E9000-03 Bay 1")),
+            instancia=4, serie_chasis="HWE9000LAB003", ubicacion="DC-LIMA / E9000-03 Bay 1")),
         ("huawei-ch121-v5-04", lambda d: ibmc(d, blade, "huawei-ch121-v5-04", "HWCH121V5004", "CH121 V5", 2,
-            instancia=5, serie_chasis="HWE9000LAB003", ubicacion="DC-LAB-LOCAL / E9000-03 Bay 2")),
+            instancia=5, serie_chasis="HWE9000LAB003", ubicacion="DC-LIMA / E9000-03 Bay 2")),
     ])
     for name, fill in profiles:
         if args.solo and name not in args.solo:

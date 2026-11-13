@@ -52,13 +52,13 @@ def test_carga_completa_sin_necesitar_nuevas_columnas_ni_bd(monkeypatch):
     identificador=100
     def ejecutar(sql,params):
         nonlocal identificador
-        if sql.startswith("SELECT nombre"):cursor.fetchone.return_value=("DC-LAB-LOCAL",)
+        if sql.startswith("SELECT nombre"):cursor.fetchone.return_value=("DC-LIMA",)
         elif sql.startswith("SELECT tipo"):cursor.fetchone.return_value=("RACKEABLE",)
         elif "RETURNING id" in sql:
             identificador+=1;cursor.fetchone.return_value=(identificador,)
     cursor.execute.side_effect=ejecutar
     monkeypatch.setattr(db,"obtener_conexion",lambda cfg:conexion)
-    resultado=cargar_registro(Configuracion(SecretStr("test")),ficha,ubicacion="DC-LAB-LOCAL")
+    resultado=cargar_registro(Configuracion(SecretStr("test")),ficha,ubicacion="DC-LIMA")
     assert resultado["hostname"]=="hpe-dl380-02"
     assert resultado["metricas_guardadas"]==5
     for tabla,filas in ficha["componentes"].items():

@@ -83,7 +83,7 @@ async def _ejecutar(config, ids):
         except Exception:
             # Algunos clientes incluyen credenciales en el texto de las excepciones.
             LOG.error("No se completó la iteración de la conexión %s", conexion_id)
-    semaforo = asyncio.Semaphore(4)
+    semaforo = asyncio.Semaphore(config.etl_concurrencia)
     async def limitada(conexion_id):
         async with semaforo:
             await una(conexion_id)

@@ -1025,6 +1025,15 @@ CREATE UNIQUE INDEX alerta_condicion_abierta_uq
     WHERE fecha_resolucion IS NULL;
 
 
+-- Índices de búsqueda de componentes por activo (migración 007).
+CREATE INDEX idx_cpu_activo_id ON public.cpu (activo_id);
+CREATE INDEX idx_ram_activo_id ON public.ram (activo_id);
+CREATE INDEX idx_disco_activo_id ON public.disco (activo_id);
+CREATE INDEX idx_tarjeta_red_activo_id ON public.tarjeta_red (activo_id);
+CREATE INDEX idx_fuente_poder_activo_id ON public.fuente_poder (activo_id);
+CREATE INDEX idx_ventilador_activo_id ON public.ventilador (activo_id);
+CREATE INDEX idx_controladora_raid_activo_id ON public.controladora_raid (activo_id);
+
 --
 -- PostgreSQL database dump complete
 --
@@ -1033,7 +1042,7 @@ CREATE UNIQUE INDEX alerta_condicion_abierta_uq
 
 
 
--- Usuarios, roles y permisos (migración 004_usuarios_roles.sql).
+-- Usuarios, roles y permisos (migración 005_usuarios_roles.sql).
 -- Acceso al sistema. No contiene usuarios, contraseñas ni hashes.
 BEGIN;
 CREATE TABLE IF NOT EXISTS public.rol (
