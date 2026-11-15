@@ -16,7 +16,7 @@ def test_nic_sin_serial_conserva_id_y_no_genera_evento(monkeypatch):
         actualizaciones.append((tabla, fila_id, datos["numero_serial"]))
         return {"numero_serial": datos["numero_serial"]}
 
-    monkeypatch.setattr(monitoreo, "_filas", filas)
+    monkeypatch.setattr(monitoreo.repo, "bloquear_componentes", filas)
     monkeypatch.setattr(monitoreo, "_actualizar_fila", actualizar)
     monkeypatch.setattr(monitoreo, "_insertar", lambda *_args: (_ for _ in ()).throw(
         AssertionError("No debe insertar una tarjeta nueva")))

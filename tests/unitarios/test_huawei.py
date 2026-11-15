@@ -20,7 +20,7 @@ def test_nics_huawei_existentes_conservan_sus_ids_al_recibir_serie(monkeypatch):
         {"id": 42, "numero_serial": None, "modelo": "Huawei 10Gb Ethernet Adapter"},
     ]
     actualizadas = []
-    monkeypatch.setattr(monitoreo, "_filas", lambda cur, tabla, relacion, padre: existentes if tabla == "tarjeta_red" else [])
+    monkeypatch.setattr(monitoreo.repo, "bloquear_componentes", lambda cur, tabla, relacion, padre: existentes if tabla == "tarjeta_red" else [])
     monkeypatch.setattr(monitoreo, "_actualizar_fila", lambda cur, tabla, fila_id, anterior, datos:
                         actualizadas.append((fila_id, datos["numero_serial"])) or {"numero_serial": datos["numero_serial"]})
     nuevas = [{"numero_serial": f"HWNIC0000{i}", "modelo": "Huawei 10Gb Ethernet Adapter"}
@@ -37,7 +37,7 @@ def test_nics_huawei_existentes_conservan_sus_ids_al_recibir_serie(monkeypatch):
 def test_dorado_conserva_id_al_recibir_etiqueta(monkeypatch, tabla, prefijo, modelo, serie):
     existente = {"id": 41, "numero_serial": None, "modelo": prefijo + "1", "estado": "Encendido"}
     actualizadas = []
-    monkeypatch.setattr(monitoreo, "_filas", lambda cur, nombre, relacion, padre: [existente])
+    monkeypatch.setattr(monitoreo.repo, "bloquear_componentes", lambda cur, nombre, relacion, padre: [existente])
     monkeypatch.setattr(monitoreo, "_actualizar_fila", lambda cur, nombre, fila_id, anterior, datos:
                         actualizadas.append((fila_id, datos["numero_serial"])) or {"numero_serial": serie})
     cambios, eventos = monitoreo._reconciliar(None, 1, tabla, 1,

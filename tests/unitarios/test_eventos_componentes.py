@@ -26,7 +26,7 @@ def preparar(monkeypatch, anteriores):
         eventos.append((activo_id, campo, valor, descripcion, fecha,
                         componente_tipo, componente_sn))
 
-    monkeypatch.setattr(monitoreo, "_filas", filas)
+    monkeypatch.setattr(monitoreo.repo, "bloquear_componentes", filas)
     monkeypatch.setattr(monitoreo, "_actualizar_fila", actualizar)
     monkeypatch.setattr(monitoreo, "registrar_evento_estado", evento)
     monkeypatch.setattr(monitoreo, "_eliminar_componente", lambda cur, tabla, fila_id, padre:

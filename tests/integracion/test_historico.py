@@ -84,7 +84,10 @@ def test_dos_eventos_por_activo(altas, nombre):
     tipo = EXPECTED[nombre]
     assert altas[nombre]["tipo_activo"] == tipo
     assert altas[nombre]["eventos_registrados"] == 2
-    filas = [f for f in _eventos() if f[0] == altas[nombre]["activo_id"]]
+    # El alta registra dos eventos del equipo; las condiciones de alerta de
+    # componentes se registran de forma independiente por evaluar_alertas().
+    filas = [f for f in _eventos() if f[0] == altas[nombre]["activo_id"]
+             and f[2] in ("estado_operativo", "estado_conexion") and f[4] is None]
     assert [(f[2], f[3], f[4], f[5]) for f in filas] == [
         ("estado_operativo", altas[nombre]["estado_operativo"], None, None),
         ("estado_conexion", "Activo", None, None)]
@@ -117,7 +120,9 @@ def test_segundo_alta_409_no_agrega_eventos(altas, base, cliente):
     antes = len(_eventos())
     r = cliente.post(PATH, json={"conexion_id": base["hpe-dl380-01"], "cluster_id": CLUSTER}, headers=HEADERS)
     assert r.status_code == 409
-    assert len(_eventos()) == antes == 2 * len(ORDEN)
+    assert len(_eventos()) == antes
+    iniciales = [f for f in _eventos() if f[2] in ("estado_operativo", "estado_conexion") and f[4] is None]
+    assert len(iniciales) == 2 * len(ORDEN)
 
 
 def test_imprime_historico_completo(altas, capsys):
@@ -163,7 +168,7 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         puerto_id, estado_puerto = cur.fetchone()
         cur.execute("UPDATE puerto_switch SET estado=%s WHERE id=%s",
                     ("Apagado" if estado_puerto == "Encendido" else "Encendido", puerto_id))
-        cur.execute("UPDATE activo SET estado_operativo='Baja' WHERE id=%s", (activo_id,))
+        cur.execute("UPDATE activo SET estado_operativo='Apagado' WHERE id=%s", (activo_id,))
     resultado = asyncio.run(ejecutar_iteracion(config, conexion_id))
     assert resultado["ok"] and resultado["eventos"] >= 2
     with _conectar() as c, c.cursor() as cur:
@@ -180,12 +185,12 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         cur.execute("UPDATE monitoreo_snmp SET ip_gestion='127.0.0.1:1' WHERE id=%s", (conexion_id,))
     try:
         fallo = asyncio.run(ejecutar_iteracion(config, conexion_id))
-        assert fallo["ok"] is False and fallo["eventos"] == 2
+        assert fallo["ok"] is False and fallo["eventos"] == 1
         with _conectar() as c, c.cursor() as cur:
             cur.execute("SELECT estado_conexion FROM monitoreo_snmp WHERE id=%s", (conexion_id,))
             assert cur.fetchone() == ("Sin conexión",)
             cur.execute("SELECT estado_operativo, ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
-            assert cur.fetchone() == ("Degradado", fecha_activo)
+            assert cur.fetchone() == (altas["aruba-cx-sw01"]["estado_operativo"], fecha_activo)
             cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
             assert cur.fetchone()[0] == metricas_antes
         assert registrar_fallo(config, leer_conexion(config, conexion_id), "timeout")["eventos"] == 0
@@ -193,14 +198,15 @@ def test_cambios_de_estado_y_recuperacion(altas, base, cliente):
         with _conectar() as c, c.cursor() as cur:
             cur.execute("UPDATE monitoreo_snmp SET ip_gestion=%s WHERE id=%s", (destino, conexion_id))
     recuperacion = asyncio.run(ejecutar_iteracion(config, conexion_id))
-    assert recuperacion["ok"] and recuperacion["eventos"] == 2
+    assert recuperacion["ok"] and recuperacion["eventos"] == 1
     with _conectar() as c, c.cursor() as cur:
         cur.execute("SELECT estado_operativo FROM activo WHERE id=%s", (activo_id,))
         assert cur.fetchone()[0] == altas["aruba-cx-sw01"]["estado_operativo"]
-        cur.execute("SELECT campo, valor_nuevo FROM historico_estado WHERE activo_id=%s ORDER BY id DESC LIMIT 4", (activo_id,))
+        cur.execute("""SELECT campo, valor_nuevo FROM historico_estado WHERE activo_id=%s
+            AND campo IN ('estado_operativo','estado_conexion') ORDER BY id DESC LIMIT 3""", (activo_id,))
         assert cur.fetchall() == [
-            ("estado_conexion", "Activo"), ("estado_operativo", altas["aruba-cx-sw01"]["estado_operativo"]),
-            ("estado_operativo", "Degradado"), ("estado_conexion", "Sin conexión"),
+            ("estado_conexion", "Activo"), ("estado_conexion", "Sin conexión"),
+            ("estado_operativo", altas["aruba-cx-sw01"]["estado_operativo"]),
         ]
 
 
@@ -233,10 +239,10 @@ def test_componentes_nuevos_y_ausentes_y_campos_del_front(altas, base, cliente):
         assert cur.fetchone()[0] == "Operaciones"
     ficha["componentes"]["puerto_switch"].pop()
     retirado = guardar_iteracion(config, referencia, ficha)
-    assert retirado["eventos"] == 1
+    assert retirado["eventos"] == 0
     with _conectar() as c, c.cursor() as cur:
         cur.execute("SELECT estado FROM puerto_switch WHERE id=%s", (puerto_id,))
-        assert cur.fetchone()[0] == "Baja"
+        assert cur.fetchone()[0] == "Encendido"
 
 
 def test_slot_y_blade_conservan_su_vinculo(altas, base, cliente):
@@ -270,3 +276,39 @@ def test_slot_y_blade_conservan_su_vinculo(altas, base, cliente):
         assert servidor_id == blade_id
         cur.execute("SELECT id_chasis_slot FROM servidor WHERE id=%s", (blade_id,))
         assert cur.fetchone()[0] == slot_id
+
+
+def test_baja_y_mantenimiento_impiden_consultar_y_reactivar_el_activo(altas, base, cliente):
+    import asyncio
+    from etl.monitoreo import ejecutar_iteracion, leer_conexion
+    activo_id = altas["aruba-cx-sw01"]["activo_id"]
+    conexion_id = base["aruba-cx-sw01"]
+    config = cliente.app.state.config
+    with _conectar() as c, c.cursor() as cur:
+        cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+        fecha = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+        metricas = cur.fetchone()[0]
+    try:
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("UPDATE activo SET estado_operativo='Baja' WHERE id=%s", (activo_id,))
+        assert leer_conexion(config, conexion_id) is None
+        assert asyncio.run(ejecutar_iteracion(config, conexion_id)) == {"conexion_id": conexion_id, "omitida": True}
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("SELECT estado_operativo,ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            assert cur.fetchone() == ("Baja", fecha)
+            cur.execute("UPDATE activo SET estado_operativo=%s,mantenimiento_activo=true WHERE id=%s",
+                        (altas["aruba-cx-sw01"]["estado_operativo"],activo_id))
+            cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Inactivo' WHERE id=%s", (conexion_id,))
+        assert leer_conexion(config, conexion_id) is None
+        assert asyncio.run(ejecutar_iteracion(config, conexion_id)) == {"conexion_id": conexion_id, "omitida": True}
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("SELECT count(*) FROM metrica_historica WHERE activo_id=%s", (activo_id,))
+            assert cur.fetchone()[0] == metricas
+            cur.execute("SELECT ultima_actualizacion FROM activo WHERE id=%s", (activo_id,))
+            assert cur.fetchone()[0] == fecha
+    finally:
+        with _conectar() as c, c.cursor() as cur:
+            cur.execute("UPDATE activo SET estado_operativo=%s,mantenimiento_activo=false WHERE id=%s",
+                        (altas["aruba-cx-sw01"]["estado_operativo"],activo_id))
+            cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Activo' WHERE id=%s", (conexion_id,))

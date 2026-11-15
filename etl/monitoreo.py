@@ -9,6 +9,7 @@ from etl.alertas import evaluar_alertas, etiqueta_componente, cerrar_alertas_tar
 from etl.credenciales import descifrar
 from etl.ciclo import preparar_registro_activo
 from etl.db import conexion_bd
+from etl import repositorio_monitoreo as repo
 from etl.errores import DatosIncompletos, ErrorExtraccion
 from etl.metricas import construir_metricas
 from etl.repositorio import (COLUMNAS, _insertar, guardar_metricas, registrar_evento_estado,
@@ -25,7 +26,7 @@ COMPATIBLES = {
     "SWITCH": ("puerto_switch", "cpu", "ram", "fuente_poder", "ventilador"),
     "CHASIS": ("chasis_slot", "tarjeta_red", "fuente_poder", "ventilador"),
 }
-RELACION = {"puerto_switch": "switch_id", "chasis_slot": "chasis_id", "puerto_tarjeta_red": "tarjeta_red_id"}
+RELACION = repo.RELACION
 ESTRUCTURALES = {"puerto_switch", "puerto_tarjeta_red", "chasis_slot"}
 # Estado operativo del programador: solo se confirma después del commit del ciclo.
 CONTADORES_LECTURA = {}
@@ -56,11 +57,7 @@ class ConexionMonitoreo:
 def leer_conexion(config, conexion_id):
     """Lee credenciales actuales en cada iteración; no las expone en logs/resultados."""
     with conexion_bd(config) as db, db.cursor() as cur:
-        cur.execute("""SELECT m.activo_id, m.ip_gestion, m.usuario, m.clave
-            FROM monitoreo_snmp m JOIN activo a ON a.id=m.activo_id
-            WHERE m.id=%s AND a.estado_operativo <> 'Baja' AND NOT a.mantenimiento_activo
-            AND m.estado_conexion IN ('Activo', 'Sin conexión')""", (conexion_id,))
-        row = cur.fetchone()
+        row = repo.leer_conexion_habilitada(cur, conexion_id)
     if not row:
         return None
     activo_id, ip, usuario, clave = row
@@ -68,11 +65,6 @@ def leer_conexion(config, conexion_id):
     if not ip or not usuario or not clave:
         raise DatosIncompletos("La conexión vinculada no tiene datos SNMP completos.")
     return ConexionMonitoreo(conexion_id, activo_id, ip, usuario, SecretStr(clave))
-
-
-def _filas(cur, tabla, relacion, padre_id):
-    cur.execute(f"SELECT * FROM {tabla} WHERE {relacion}=%s ORDER BY id FOR UPDATE", (padre_id,))
-    return list(cur.fetchall())
 
 
 def _identificador(tabla, fila, posicion):
@@ -93,9 +85,7 @@ def _actualizar_fila(cur, tabla, fila_id, anterior, datos, *, forzar=()):
     cambios = {k: v for k, v in preparados.items() if anterior.get(k) != v}
     escritura = {**cambios, **{k: preparados[k] for k in forzar if k in preparados}}
     if escritura:
-        columnas = list(escritura)
-        cur.execute(f"UPDATE {tabla} SET {', '.join(k + '=%s' for k in columnas)} WHERE id=%s",
-                    (*[escritura[k] for k in columnas], fila_id))
+        repo.actualizar_fila(cur, tabla, fila_id, escritura)
     return cambios
 
 
@@ -116,7 +106,7 @@ def _proteger_lectura_vacia(cur, tabla, padre_id, nuevas, limite, contadores):
     if nuevas:
         contadores.pop(clave, None)
         return False, 0
-    anteriores = _filas(cur, tabla, RELACION.get(tabla, "activo_id"), padre_id)
+    anteriores = repo.bloquear_componentes(cur, tabla, RELACION.get(tabla, "activo_id"), padre_id)
     estado_inactivo = "LIBRE" if tabla == "chasis_slot" else "Baja"
     cantidad = sum(fila.get("estado") != estado_inactivo for fila in anteriores)
     if not cantidad:
@@ -136,9 +126,8 @@ def _eliminar_componente(cur, tabla, fila_id, padre_id):
         raise DatosIncompletos("Los puertos y slots estructurales conservan sus filas.")
     if tabla == "tarjeta_red":
         cerrar_alertas_tarjeta(cur, padre_id, fila_id)
-        cur.execute("DELETE FROM puerto_tarjeta_red WHERE tarjeta_red_id=%s", (fila_id,))
-    relacion = RELACION.get(tabla, "activo_id")
-    cur.execute(f"DELETE FROM {tabla} WHERE id=%s AND {relacion}=%s", (fila_id, padre_id))
+        repo.eliminar_puertos_tarjeta(cur, fila_id)
+    repo.eliminar_componente(cur, tabla, fila_id, padre_id)
 
 
 def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lectura=None):
@@ -148,7 +137,7 @@ def _reconciliar(cur, activo_id, tabla, padre_id, nuevas, fecha, *, proteger_lec
         if omitida:
             return 0, eventos_lectura
     relacion = RELACION.get(tabla, "activo_id")
-    anteriores = _filas(cur, tabla, relacion, padre_id)
+    anteriores = repo.bloquear_componentes(cur, tabla, relacion, padre_id)
     disponibles = {fila["id"]: fila for fila in anteriores}
     eventos, cambios = eventos_lectura, 0
     for posicion, nueva in enumerate(nuevas):
@@ -239,33 +228,23 @@ def _retirar_discos_confirmados(cur, activo_id, ausentes, presentes, fecha):
     series = sorted(set(ausentes) - series_presentes - {None, ""})
     if not series:
         return 0
-    cur.execute("""SELECT id, numero_serial FROM disco
-        WHERE activo_id=%s AND numero_serial = ANY(%s) FOR UPDATE""",
-        (activo_id, series))
-    filas = cur.fetchall()
+    filas = repo.listar_discos_ausentes(cur, activo_id, series)
     if len({fila["numero_serial"] for fila in filas}) != len(filas):
         raise DatosIncompletos("Hay discos duplicados con la misma serie.")
     for fila in filas:
-        cur.execute("DELETE FROM disco WHERE id=%s AND activo_id=%s",
-                    (fila["id"], activo_id))
+        repo.eliminar_disco(cur, fila["id"], activo_id)
         _evento_presencia(cur, activo_id, "disco", fila["numero_serial"], "Retirado", fecha)
     return len(filas)
 
 
 def _sincronizar_slots(cur, chasis_id):
     """Mantiene el vínculo blade/slot cuando SNMP cambia la ocupación del chasis."""
-    cur.execute("""SELECT s.id, s.servidor_id, s.hostname_servidor, s.estado,
-        a.ubicacion FROM chasis_slot s JOIN activo a ON a.id=s.chasis_id
-        WHERE s.chasis_id=%s ORDER BY s.id FOR UPDATE OF s""", (chasis_id,))
-    slots = cur.fetchall()
+    slots = repo.leer_slots_chasis(cur, chasis_id)
     deseados = {}
     for slot in slots:
         servidor = None
         if slot["estado"] != "LIBRE" and slot["hostname_servidor"]:
-            cur.execute("""SELECT b.id FROM activo b JOIN servidor v ON v.id=b.id AND v.tipo='BLADE'
-                WHERE b.hostname=%s AND b.ubicacion=%s""",
-                (slot["hostname_servidor"], slot["ubicacion"]))
-            coincidencias = cur.fetchall()
+            coincidencias = repo.buscar_blades_en_ubicacion(cur, slot["hostname_servidor"], slot["ubicacion"])
             if len(coincidencias) > 1:
                 raise DatosIncompletos("El slot coincide con varios servidores blade.")
             servidor = coincidencias[0]["id"] if coincidencias else None
@@ -273,24 +252,18 @@ def _sincronizar_slots(cur, chasis_id):
     for slot in slots:
         anterior, nuevo = slot["servidor_id"], deseados[slot["id"]]
         if anterior is not None and anterior != nuevo:
-            cur.execute("UPDATE servidor SET id_chasis_slot=NULL WHERE id=%s AND id_chasis_slot=%s",
-                        (anterior, slot["id"]))
-            cur.execute("UPDATE chasis_slot SET servidor_id=NULL WHERE id=%s", (slot["id"],))
+            repo.liberar_slot(cur, anterior, slot["id"])
     for slot in slots:
         nuevo = deseados[slot["id"]]
         if nuevo is not None and nuevo != slot["servidor_id"]:
-            cur.execute("SELECT id_chasis_slot FROM servidor WHERE id=%s FOR UPDATE", (nuevo,))
-            asignado = cur.fetchone()["id_chasis_slot"]
+            asignado = repo.leer_asignacion_blade(cur, nuevo)["id_chasis_slot"]
             if asignado is not None and asignado != slot["id"]:
                 raise DatosIncompletos("El blade ya está asignado a otro slot.")
-            cur.execute("UPDATE servidor SET id_chasis_slot=%s WHERE id=%s", (slot["id"], nuevo))
-            cur.execute("UPDATE chasis_slot SET servidor_id=%s WHERE id=%s", (nuevo, slot["id"]))
+            repo.asignar_slot(cur, nuevo, slot["id"])
 
 
 def _bloquear_conexion(cur, referencia, config):
-    cur.execute("""SELECT activo_id, ip_gestion, usuario, clave, estado_conexion
-        FROM monitoreo_snmp WHERE id=%s FOR UPDATE""", (referencia.id,))
-    row = cur.fetchone()
+    row = repo.bloquear_conexion(cur, referencia.id)
     if not row or row["activo_id"] != referencia.activo_id or row["ip_gestion"] != referencia.ip_gestion or \
        row["usuario"] != referencia.usuario or descifrar(row["clave"], config.credential_key) != referencia.clave.get_secret_value():
         raise DatosIncompletos("La conexión cambió durante la consulta; se repetirá en el siguiente ciclo.")
@@ -303,16 +276,14 @@ def registrar_fallo(config, referencia, tipo):
         actual = _bloquear_conexion(cur, referencia, config)
         if actual["estado_conexion"] == "Inactivo":
             return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
-        cur.execute("SELECT estado_operativo FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
-        activo = cur.fetchone()
+        activo = repo.bloquear_estado_operativo(cur, referencia.activo_id)
         if activo is None:
             raise DatosIncompletos("No existe el activo de la conexión SNMP.")
         if activo["estado_operativo"] == "Baja":
             return {"conexion_id": referencia.id, "ok": False, "eventos": 0}
         eventos = 0
         if actual["estado_conexion"] == "Activo":
-            cur.execute("UPDATE monitoreo_snmp SET estado_conexion='Sin conexión' WHERE id=%s",
-                        (referencia.id,))
+            repo.marcar_conexion_sin_conexion(cur, referencia.id)
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Sin conexión", f"Falló la consulta SNMP ({tipo})", fecha)
             eventos += 1
@@ -334,8 +305,7 @@ def guardar_iteracion(config, referencia, ficha):
         conexion = _bloquear_conexion(cur, referencia, config)
         if conexion["estado_conexion"] == "Inactivo":
             return {"conexion_id": referencia.id, "omitida": True}
-        cur.execute("SELECT * FROM activo WHERE id=%s FOR UPDATE", (referencia.activo_id,))
-        anterior = cur.fetchone()
+        anterior = repo.bloquear_activo(cur, referencia.activo_id)
         if anterior and anterior["estado_operativo"] == "Baja":
             return {"conexion_id": referencia.id, "omitida": True}
         if not anterior or anterior["tipo_activo"] != activo["tipo_activo"] or anterior["numero_serie"] != activo["numero_serie"]:
@@ -354,8 +324,7 @@ def guardar_iteracion(config, referencia, ficha):
                 activo["estado_operativo"],
                 f"Estado operativo: {anterior['estado_operativo']} → {activo['estado_operativo']}", fecha)
             eventos += 1
-        cur.execute(f"SELECT * FROM {subtipo} WHERE id=%s FOR UPDATE", (referencia.activo_id,))
-        anterior_subtipo = cur.fetchone()
+        anterior_subtipo = repo.bloquear_subtipo(cur, subtipo, referencia.activo_id)
         if anterior_subtipo is None:
             raise DatosIncompletos("Falta el subtipo del activo registrado.")
         # Un NULL en la extracción no borra metadatos completados desde el front.
@@ -387,7 +356,7 @@ def guardar_iteracion(config, referencia, ficha):
         if activo["tipo_activo"] == "CHASIS" and "chasis_slot" in componentes and "chasis_slot" not in tablas_omitidas:
             _sincronizar_slots(cur, referencia.activo_id)
         guardar_metricas(db, referencia.activo_id, metricas)
-        cur.execute("""UPDATE monitoreo_snmp SET estado_conexion='Activo' WHERE id=%s""", (referencia.id,))
+        repo.marcar_conexion_activa(cur, referencia.id)
         if conexion["estado_conexion"] != "Activo":
             registrar_evento_estado(cur, referencia.activo_id, CAMPO_ESTADO_CONEXION,
                 "Activo", "Conexión SNMP restablecida", fecha)
