@@ -27,7 +27,7 @@ COMPATIBLES = {
     "CHASIS": ("chasis_slot", "tarjeta_red", "fuente_poder", "ventilador"),
 }
 RELACION = repo.RELACION
-ESTRUCTURALES = {"puerto_switch", "puerto_tarjeta_red", "chasis_slot"}
+ESTRUCTURALES = repo.ESTRUCTURALES
 # Estado operativo del programador: solo se confirma después del commit del ciclo.
 CONTADORES_LECTURA = {}
 NOMBRES_COMPONENTE = {
