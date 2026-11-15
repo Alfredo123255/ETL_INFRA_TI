@@ -86,12 +86,60 @@ def test_archivo_bloqueado_no_deja_retiro_pendiente(tmp_path, monkeypatch):
     original = ruta.read_bytes()
     def bloqueado(*_):
         raise PermissionError('Archivo abierto por el agente')
-    monkeypatch.setattr(componentes_snmp, 'escribir_atomico', bloqueado)
-    with pytest.raises(ValueError, match='-Reiniciar'):
+    monkeypatch.setattr(componentes_snmp, 'escribir_captura', bloqueado)
+    with pytest.raises(ValueError, match='No se pudo guardar'):
         retirar(ruta, 'disco', [1])
     assert ruta.read_bytes() == original
     with pytest.raises(ValueError, match='No hay retiros'):
         restaurar(ruta)
+
+
+def test_edita_archivo_abierto_sin_reemplazarlo_y_actualiza_fecha(tmp_path):
+    ruta = copiar(tmp_path)
+    original = ruta.read_bytes()
+    antes = ruta.stat()
+    with ruta.open('rb') as lector:
+        retirar(ruta, 'disco', [1])
+        assert ruta.stat().st_ino == antes.st_ino
+        assert ruta.stat().st_mtime != antes.st_mtime
+        lector.seek(0)
+        assert lector.read() == ruta.read_bytes()
+        despues = ruta.stat()
+        restaurar(ruta)
+        assert ruta.stat().st_ino == antes.st_ino
+        assert ruta.stat().st_mtime != despues.st_mtime
+        lector.seek(0)
+        assert lector.read() == original
+
+
+def test_escritura_parcial_recupera_contenido_anterior(tmp_path, monkeypatch):
+    ruta = copiar(tmp_path)
+    original = ruta.read_bytes()
+    escribir = componentes_snmp.escribir_completo
+    llamadas = []
+    def falla_primera(archivo, contenido):
+        llamadas.append(True)
+        if len(llamadas) == 1:
+            archivo.write(contenido[:100])
+            raise OSError('Fallo simulado después de escribir parte del archivo')
+        escribir(archivo, contenido)
+    monkeypatch.setattr(componentes_snmp, 'escribir_completo', falla_primera)
+    with pytest.raises(ValueError, match='No se pudo guardar'):
+        retirar(ruta, 'disco', [1])
+    assert len(llamadas) == 2
+    assert ruta.read_bytes() == original
+    with pytest.raises(ValueError, match='No hay retiros'):
+        restaurar(ruta)
+
+
+def test_no_sobrescribe_si_cambia_antes_de_abrir_para_escribir(tmp_path):
+    ruta = copiar(tmp_path)
+    original = ruta.read_bytes()
+    cambiado = original+b'# cambio externo\n'
+    ruta.write_bytes(cambiado)
+    with pytest.raises(ValueError, match='cambió durante'):
+        componentes_snmp.escribir_captura(ruta, original, original)
+    assert ruta.read_bytes() == cambiado
 
 
 def test_vista_previa_y_numero_invalido_no_modifican_captura(tmp_path):

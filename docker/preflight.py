@@ -21,14 +21,13 @@ def verificar(config):
             fila = cur.fetchone()
             if not fila or not fila[0]:
                 raise RuntimeError('PostgreSQL no está usando TLS.')
-            cur.execute('SELECT clave, clave_privacidad FROM public.monitoreo_snmp')
+            cur.execute('SELECT clave FROM public.monitoreo_snmp')
             filas = cur.fetchall()
             cifradas = 0
-            for clave, privacidad in filas:
-                for campo, valor in [('clave', clave), ('clave_privacidad', privacidad)]:
-                    if valor and valor.startswith('enc:'):
-                        descifrar(valor, config.credential_key, campo)
-                        cifradas += 1
+            for (clave,) in filas:
+                if clave and clave.startswith('enc:'):
+                    descifrar(clave, config.credential_key)
+                    cifradas += 1
             cur.execute("SELECT count(*) FROM public.activo")
             activos = cur.fetchone()[0]
         return resultado | {'tls': True, 'conexiones': len(filas),

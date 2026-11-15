@@ -76,7 +76,7 @@ docker compose build
 docker compose run --rm --no-deps fastapi python docker/preflight.py
 ```
 
-La tercera orden consulta la base en modo de solo lectura: comprueba TLS, dos columnas necesarias del esquema, recuentos y que la llave pueda descifrar las credenciales existentes. No ejecuta el ETL. El backend valida adicionalmente el mapeo completo de entidades al arrancar (`ddl-auto=validate`). Si falla, corrige el acceso, el certificado, la llave o revisa la compatibilidad del esquema existente antes de seguir.
+La tercera orden consulta la base en modo de solo lectura: comprueba TLS, la compatibilidad del esquema, recuentos y que la llave pueda descifrar las credenciales existentes en monitoreo_snmp.clave. No consulta la columna retirada clave_privacidad. No ejecuta el ETL. El backend valida adicionalmente el mapeo completo de entidades al arrancar (`ddl-auto=validate`). Si falla, corrige el acceso, el certificado, la llave o revisa la compatibilidad del esquema existente antes de seguir.
 
 Si las verificaciones son correctas:
 
@@ -104,3 +104,7 @@ Los simuladores usan los datos incluidos en la imagen. Si cambias un `.snmprec` 
 En este equipo de desarrollo no hay motor Docker. Se verifican la configuración de Compose, las dependencias y la compilación del código; la construcción y ejecución real de las imágenes debe comprobarse en Linux con las órdenes anteriores. El acceso a AWS y el certificado del destino solo pueden verificarse después de completar los datos reales. Esta entrega no certifica todavía un despliegue activo en AWS.
 
 La configuración publica el frontend por HTTP en 5173 para conservar el puerto actual. Si se expondrá a Internet, prepara el dominio y HTTPS en el servidor antes de introducir credenciales desde redes externas; ajusta `PUBLIC_ORIGIN` al origen final.
+
+## Ejecutar en otra PC con Docker Desktop o Docker Engine
+
+El archivo [compose.local.yaml](compose.local.yaml) conserva PostgreSQL en AWS y los puertos habituales, sin crear un entorno paralelo ni otra base. Comparte la red de los simuladores entre servicios para conservar las IP SNMP sin usar la red host. Consulta [README.local.md](README.local.md) y la plantilla `.env.local.example`.

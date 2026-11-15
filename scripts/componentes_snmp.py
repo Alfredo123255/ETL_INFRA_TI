@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import time
 import uuid
 
 REPO = Path(__file__).resolve().parents[1]
@@ -302,6 +303,41 @@ def escribir_atomico(ruta, contenido):
             temporal.unlink()
 
 
+def escribir_completo(archivo, contenido):
+    pendientes = memoryview(contenido)
+    while pendientes:
+        cantidad = archivo.write(pendientes)
+        if not cantidad:
+            raise OSError('La escritura del archivo quedó incompleta.')
+        pendientes = pendientes[cantidad:]
+
+
+def escribir_captura(ruta, contenido, esperado):
+    """Edita el archivo abierto por snmpsim sin reemplazarlo; recupera ante un fallo."""
+    with ruta.open('r+b', buffering=0) as archivo:
+        anterior = os.fstat(archivo.fileno())
+        original = archivo.read()
+        if original != esperado:
+            raise ValueError('La captura cambió durante la operación; no se sobrescribió.')
+        try:
+            archivo.seek(0)
+            escribir_completo(archivo, contenido)
+            archivo.truncate(len(contenido))
+            os.fsync(archivo.fileno())
+        except OSError:
+            try:
+                archivo.seek(0)
+                escribir_completo(archivo, original)
+                archivo.truncate(len(original))
+                os.fsync(archivo.fileno())
+            except OSError:
+                raise OSError('La escritura y su recuperación fallaron; conserva el respaldo para restaurar el archivo.') from None
+            raise
+    # snmpsim compara mtime como float; 1 ms distingue operaciones seguidas.
+    instante = max(time.time_ns(), anterior.st_mtime_ns + 1_000_000)
+    os.utime(ruta, ns=(anterior.st_atime_ns, instante))
+
+
 @contextmanager
 def bloqueo(carpeta):
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -341,11 +377,11 @@ def retirar(ruta, tipo, numeros=None, todos=False, vista_previa=False):
             (copia/'operacion.json').write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding='utf-8')
             raise ValueError('La captura cambió durante la operación; no se sobrescribió.')
         try:
-            escribir_atomico(ruta, nuevo)
-        except OSError:
-            meta['cancelado'] = True
+            escribir_captura(ruta, nuevo, original)
+        except (OSError, ValueError) as exc:
+            meta['cancelado'] = ruta.read_bytes() == original
             (copia/'operacion.json').write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding='utf-8')
-            raise ValueError('No se pudo sustituir la captura. Si el agente la tiene abierta, usa el lanzador PowerShell con -Reiniciar o detén ese agente antes de editar.') from None
+            raise ValueError('No se pudo guardar la captura: '+str(exc)+' Respaldo: '+str(copia)) from None
         return {**detalle, 'respaldo': str(copia)}
 
 
@@ -368,7 +404,7 @@ def restaurar(ruta, vista_previa=False):
             raise ValueError('La captura tiene cambios posteriores ajenos al script. No se sobrescribieron; revisa el respaldo: '+str(archivo.parent))
         if vista_previa:
             return {'equipo': ruta.parent.name, 'restaurar': meta['tipo'], 'piezas': meta['piezas'], 'vista_previa': True}
-        escribir_atomico(ruta, original)
+        escribir_captura(ruta, original, actual)
         meta['restaurado'] = True
         escribir_atomico(archivo, json.dumps(meta, indent=2, ensure_ascii=False).encode('utf-8'))
         return {'equipo': ruta.parent.name, 'restaurado': meta['tipo'], 'piezas': meta['piezas']}
@@ -412,7 +448,7 @@ def main():
             resultado = restaurar(ruta, args.vista_previa)
         print(json.dumps(resultado, indent=2, ensure_ascii=False))
         if not args.vista_previa:
-            print('Reinicia solo este agente y espera la siguiente iteración ETL. No se escribió en la base de datos.')
+            print('El agente recargará la captura en la próxima consulta, sin reiniciarse. Espera la siguiente iteración ETL. No se escribió en la base de datos.')
         return 0
     except (ValueError, OSError) as exc:
         print('Error: '+str(exc), file=sys.stderr)

@@ -17,16 +17,16 @@ La lista muestra el número de selección, índice SNMP, modelo y serie cuando e
 # Ver qué se retiraría sin cambiar la captura.
 .\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo disco -Numero 1 -VistaPrevia
 
-# Retirar un disco y reiniciar solamente su agente.
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo disco -Numero 1 -Reiniciar
+# Retirar un disco con el agente encendido, sin reiniciarlo.
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo disco -Numero 1
 
 # Otros ejemplos: ejecuta únicamente los retiros que quieras probar.
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo ram -Numero 1,2 -Reiniciar
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo cpu -Numero 1 -Reiniciar
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo fuente_poder -Numero 1 -Reiniciar
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo huawei-2288h-v5-01 -Tipo ventilador -Numero 1 -Reiniciar
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo huawei-2288h-v5-01 -Tipo tarjeta_red -Numero 1 -Reiniciar
-.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo controladora_raid -Numero 1 -Reiniciar
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo ram -Numero 1,2
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo cpu -Numero 1
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo fuente_poder -Numero 1
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo huawei-2288h-v5-01 -Tipo ventilador -Numero 1
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo huawei-2288h-v5-01 -Tipo tarjeta_red -Numero 1
+.\scripts\componentes_snmp.ps1 -Accion retirar -Equipo hpe-dl380-01 -Tipo controladora_raid -Numero 1
 ```
 
 Tipos: `cpu`, `ram`, `disco`, `fuente_poder`, `ventilador`, `tarjeta_red`, `controladora_raid`. Alias: `psu`/`fuente`, `fan`, `nic`, `raid`, `memoria`. Puedes usar `-Todos` en lugar de `-Numero` para retirar todas las piezas de ese tipo, si el perfil sigue siendo válido.
@@ -40,7 +40,7 @@ Antes de guardar se comprueba la captura con el normalizador real del ETL. Si el
 ## 3. Restaurar
 
 ```powershell
-.\scripts\componentes_snmp.ps1 -Accion restaurar -Equipo hpe-dl380-01 -Reiniciar
+.\scripts\componentes_snmp.ps1 -Accion restaurar -Equipo hpe-dl380-01
 ```
 
 Cada ejecución restaura **el último retiro pendiente de ese equipo**. Si retiraste disco, RAM y CPU en tres operaciones, ejecuta restaurar tres veces. Se devuelve el archivo original byte a byte, incluidos los contadores y sensores que tenía al crear el respaldo. Si alguien hizo cambios ajenos al script después del retiro, la restauración se detiene para no sobrescribirlos.
@@ -50,16 +50,18 @@ Los respaldos locales están en `data/.respaldos_componentes/<equipo>/` y están
 ## 4. Comprobar el efecto en el sistema
 
 1. El activo debe tener el monitoreo habilitado, sin mantenimiento ni Baja, y su agente debe responder.
-2. Usa `-Reiniciar` o reinicia manualmente **solo el agente modificado**. El script no detiene FastAPI, Java, el frontend ni el programador ETL.
+2. Mantén el agente encendido: snmpsim detecta la modificación y recarga su índice en la siguiente consulta. El script no detiene ni inicia procesos.
 3. Espera la frecuencia configurada para ese activo. Si queda toda una categoría vacía, el ETL normalmente espera dos lecturas vacías consecutivas (`LECTURAS_VACIAS_PARA_BAJA`, valor por defecto 2).
 4. Revisa la ficha y el historial: el retiro debe aparecer como `presencia = Retirado`; un componente no toma estado Baja.
 5. Restaura y espera otra lectura para que el ETL detecte de nuevo las piezas. La restauración del archivo no revierte ni borra eventos históricos.
 
-En Windows snmpsim puede mantener la captura abierta e impedir reemplazarla. Con `-Reiniciar`, el lanzador valida primero el cambio, detiene solo el agente seleccionado, guarda y lo inicia nuevamente en segundo plano. También intenta reabrirlo si la escritura falla. Reutiliza su comando en memoria, sin copiar claves a archivos. Los registros quedan en `logs/componentes_snmp/`.
+El archivo se valida y respalda antes de escribir. Se modifica su contenido conservando el mismo archivo, se ajusta su longitud y se actualiza su fecha de modificación. Esto evita el bloqueo de Windows que ocurría al intentar reemplazarlo por otro archivo y permite la recarga automática de snmpsim, incluso al retirar filas completas.
 
-Sin `-Reiniciar`, detén manualmente ese agente antes de modificar su captura y vuelve a iniciarlo después. Si pediste reiniciar pero el agente estaba apagado, el script lo avisa y guarda el archivo; no inventa credenciales para iniciarlo. Mientras el agente reinicia, una consulta puede fallar transitoriamente: realiza la prueba cuando no haya una extracción en curso para evitar confundir ese reinicio con el retiro del componente.
+Ya no se utiliza el parámetro `-Reiniciar`. No necesitas cerrar el agente ni proporcionar credenciales al script. Si el agente estaba apagado, tendrás que iniciarlo normalmente para consultar la captura modificada.
 
-También puedes usar directamente el núcleo Python (mismas acciones, sin reinicio automático):
+La escritura sobre el mismo archivo no coordina las consultas SNMP que ya estén en curso. Realiza el cambio antes del siguiente ciclo ETL y evita editar la captura simultáneamente desde otro programa. Si ocurre un error de escritura, el script intenta recuperar el contenido anterior y conserva el respaldo.
+
+También puedes usar directamente el núcleo Python (mismas acciones, sin reiniciar):
 
 ```powershell
 .\.venv\Scripts\python.exe -B .\scripts\componentes_snmp.py listar --equipo huawei-dorado-01

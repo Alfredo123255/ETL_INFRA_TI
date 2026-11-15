@@ -24,3 +24,6 @@ CLAVES-DESPLIEGUE-PRIVADO.md
 # Respaldos locales de pruebas de componentes SNMP.
 data/.respaldos_componentes/
 logs/componentes_snmp/
+
+# Plantilla pública sin credenciales para la PC de destino.
+!**/.env.local.example

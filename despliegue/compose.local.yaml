@@ -1,0 +1,148 @@
+# Ejecutar en la PC de destino; PostgreSQL permanece en AWS.
+# docker compose --env-file .env.local -f compose.local.yaml up -d --build --wait
+name: infra-ti
+
+x-python-env: &python-env
+  DB_HOST: ${DB_HOST:?Completa DB_HOST de AWS en .env.local}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_NAME: ${DB_NAME:?Completa DB_NAME en .env.local}
+  DB_USERNAME: ${DB_USERNAME:?Completa DB_USERNAME en .env.local}
+  DB_PASSWORD: ${DB_PASSWORD:?Completa DB_PASSWORD en .env.local}
+  PGSSLMODE: verify-full
+  PGSSLROOTCERT: /run/certs/postgres-ca.pem
+  ETL_API_KEY: ${ETL_API_KEY:?Completa ETL_API_KEY en .env.local}
+  SNMP_CREDENTIAL_KEY_FILE: /run/secrets/snmp_credentials.key
+  SNMP_CONTEXT_NAME: public
+  SNMP_REDES_PERMITIDAS: 127.0.0.0/8
+  SNMP_TIMEOUT: "3"
+  SNMP_RETRIES: "1"
+  DB_TIMEOUT: "10"
+  LECTURAS_VACIAS_PARA_BAJA: "2"
+  ETL_CONCURRENCIA: ${ETL_CONCURRENCIA:-20}
+  API_HOST: 0.0.0.0
+  API_PORT: "8001"
+  API_DOCS: "0"
+
+x-service: &service
+  restart: unless-stopped
+  init: true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-python-volumes: &python-volumes
+  - type: bind
+    source: ./certs/postgres-ca.pem
+    target: /run/certs/postgres-ca.pem
+    read_only: true
+    bind:
+      create_host_path: false
+
+services:
+  # Dueño del espacio de red compartido. No utiliza la red del host:
+  # 127.0.0.x sigue apuntando a los agentes de estos contenedores.
+  simuladores:
+    <<: *service
+    build:
+      context: ${ETL_CONTEXT:-..}
+      dockerfile: Dockerfile.simuladores
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+      - "127.0.0.1:${FASTAPI_PORT:-8001}:8001"
+    volumes:
+      - type: bind
+        source: ${SIMULADORES_DIR:-../data}
+        target: /app/data
+        read_only: true
+        bind:
+          create_host_path: false
+    stop_grace_period: 20s
+
+  fastapi:
+    <<: *service
+    network_mode: service:simuladores
+    build:
+      context: ${ETL_CONTEXT:-..}
+      target: fastapi
+    environment: *python-env
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes: *python-volumes
+    depends_on:
+      simuladores:
+        condition: service_healthy
+        restart: true
+
+  backend:
+    <<: *service
+    network_mode: service:simuladores
+    build:
+      context: ${BACKEND_CONTEXT:-../../Backend-SI-INFRA-TI/backend-infra-ti}
+    environment:
+      DB_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME}?sslmode=verify-full&sslrootcert=/run/certs/postgres-ca.pem
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      ETL_BASE_URL: http://127.0.0.1:8001
+      ETL_API_KEY: ${ETL_API_KEY}
+      SNMP_CREDENTIAL_KEY_FILE: /run/secrets/snmp_credentials.key
+      FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?Completa PUBLIC_ORIGIN con la URL de la PC de destino}
+      FRONTEND_ORIGINS: ${PUBLIC_ORIGIN}
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      # Solo crea el primer administrador si no existe ningún usuario.
+      ADMIN_CORREO: ${ADMIN_CORREO:-}
+      ADMIN_NOMBRE: ${ADMIN_NOMBRE:-}
+      ADMIN_CONTRASENA: ${ADMIN_CONTRASENA:-}
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes: *python-volumes
+    depends_on:
+      simuladores:
+        condition: service_healthy
+        restart: true
+      fastapi:
+        condition: service_healthy
+
+  frontend:
+    <<: *service
+    network_mode: service:simuladores
+    build:
+      context: ${FRONTEND_CONTEXT:-../../Frontend-SI-INFRA-TI/Frontend-SI-INFRA-TI}
+    environment:
+      BACKEND_UPSTREAM: 127.0.0.1:8080
+    depends_on:
+      simuladores:
+        condition: service_healthy
+        restart: true
+      backend:
+        condition: service_healthy
+
+  etl:
+    <<: *service
+    network_mode: service:simuladores
+    build:
+      context: ${ETL_CONTEXT:-..}
+      target: periodico
+    environment: *python-env
+    secrets:
+      - source: snmp_credentials_key
+        target: snmp_credentials.key
+    volumes: *python-volumes
+    depends_on:
+      simuladores:
+        condition: service_healthy
+        restart: true
+      backend:
+        condition: service_healthy
+    stop_grace_period: 30s
+
+secrets:
+  snmp_credentials_key:
+    file: ./secrets/snmp_credentials.key
